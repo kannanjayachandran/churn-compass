@@ -24,6 +24,9 @@ from typing import Any, Dict, Optional
 
 from churn_compass.config.settings import settings
 
+# Track configured loggers
+_configured_loggers = set()
+
 
 class JSONFormatter(logging.Formatter):
     """
@@ -122,13 +125,11 @@ def setup_logger(
     :param log_to_console: Whether to log to console
     :type log_to_console: bool
     :return: Returns a logging.Logger object
-    :rtype: Logger
     """
-
     logger = logging.getLogger(name)
 
     # if handler already added, return logger immediately
-    if getattr(logger, "_is_configured", False):
+    if name in _configured_loggers:
         return logger
     
     # set level from parameter or settings
@@ -159,12 +160,11 @@ def setup_logger(
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(JSONFormatter())
         logger.addHandler(file_handler)
-
     # Prevent propagation to root logger
     logger.propagate = False
     
     # Mark as configured
-    logger._is_configured = True    # Private flag
+    _configured_loggers.add(name)
     
     return logger
 
