@@ -93,7 +93,7 @@ class Settings(BaseSettings):
     log_file: Optional[Path] = PROJECT_ROOT / "logs" / "churn_compass.log"
 
     # S3 Configuration (for production)
-    s3_enables: bool = Field(default=False, 
+    s3_enabled: bool = Field(default=False, 
                              json_schema_extra={"env": "CHURN_COMPASS_S3_ENABLED"})
     s3_bucket: str = Field(default="", 
                            json_schema_extra={"env": "CHURN_COMPASS_S3_BUCKET"})
