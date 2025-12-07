@@ -47,5 +47,8 @@ results/
 .DS_Store
 Thumbs.db
 
+# SECURITY - ENV FILES
+.env
+
 # Project Specific
 temp
