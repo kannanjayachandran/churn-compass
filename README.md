@@ -1,8 +1,8 @@
-# 🧭 Churn Compass
-
 ![Cover image](./assets/Cover_image.png)
 
-**Production-Grade Customer Churn Prediction Platform for Retail Banking**
+<h1 align=center> 🧭 Churn Compass </h1>
+
+> **Production-Grade Customer Churn Prediction Platform for Retail Banking**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 ![Status](https://img.shields.io/badge/Status-Active-success)
