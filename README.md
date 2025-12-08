@@ -14,8 +14,6 @@
 
 Churn Compass predicts **which customers are most likely to churn**, enabling targeted retention campaigns and revenue protection.
 
-This platform is designed to be **modular, extensible** and  **production-aligned ML system**.
-
 ### 🔑 Key Capabilities
 
 | Feature | Description |
@@ -51,14 +49,15 @@ churn-compass/
 │   ├── modeling/       # Training, optimization, evaluation
 │   ├── serving/        # Batch scoring and prediction utilities
 │   ├── api/            # FastAPI app + routers
-│   ├── monitoring/     # Drift detection + reports
-│   └── ui/             # React dashboard (coming soon)
+│   └── monitoring/     # Drift detection + reports
 │
 ├── scripts/            # Helper scripts (e.g., sample data generator)
 ├── mlflow/             # Local experiment store
 ├── logs/               # JSON logs
 ├── docker/             # Container deployment
 ├── docs/               # Documentation
+├── assets/             # Readme assets
+├── frontend/           # UI (React)
 ├── .env.example
 ├── README.md
 └── setup.sh
@@ -88,20 +87,18 @@ source venv/bin/activate
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env
 ```
 
 ---
 
-## 🌱 Synthetic Demo Data (Optional but Useful)
+## 🌱 Synthetic Demo Data
 
 This project supports **SDV synthetic data generation** for:
 
-✔ UI demos
-✔ Pipeline testing
-✔ Showing dashboards and drift charts
-
-❌ NOT used for training the real model.
+- ✔ UI demos
+- ✔ Pipeline testing
+- ✔ Showing dashboards and drift charts
+- ❌ NOT used for training the real model.
 
 Generate sample data:
 
@@ -109,46 +106,7 @@ Generate sample data:
 python scripts/create_sample_data.py
 ```
 
----
-
-## 🔧 Running the Ingestion Pipeline
-
-```bash
-python -m churn_compass.pipelines.ingest_pipeline --demo
-```
-
-With custom input/output:
-
-```bash
-python -m churn_compass.pipelines.ingest_pipeline \
-    --input data/raw/customers.csv \
-    --output data/processed/customers.parquet
-```
-
----
-
-## 📊 Model Training, Tuning & Registry
-
-Train a baseline:
-
-```bash
-python -m churn_compass.modeling.train --data data/processed/customers.parquet
-```
-
-Run hyperparameter tuning:
-
-```bash
-python -m churn_compass.modeling.tune_optuna \
-    --trials 100 \
-    --metric pr_auc
-```
-
-Start MLflow Tracking UI:
-
-```bash
-mlflow ui --backend-store-uri file:./mlflow
-# Visit: http://localhost:5000
-```
+> Do install dev dependencies before running the script. `SDV` installation can take some time.
 
 ---
 
@@ -221,5 +179,3 @@ mypy src/
 ## 📝 License
 
 MIT — free for commercial and academic use.
-
----
