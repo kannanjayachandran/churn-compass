@@ -6,22 +6,18 @@ Prefect-orchestrated ETL pipeline for ingesting and validating customer data.
 Pipeline steps:
 1. Extract: Read raw CSV data
 2. Validate: Apply Pandera schema validation
-3. Clean: Remove leakage columns and duplicates
+3. Clean: Remove leakage columns, duplicates and nulls
 4. Load: Write validated data to Parquet
 
 Usage:
-    # Run as Prefect flow
-    python -m src.bank_churn.pipelines.ingest_pipeline --demo
-    
-    # Or programmatically
-    from src.bank_churn.pipelines.ingest_pipeline import ingest_flow
-    ingest_flow(input_path="data/raw/customers.csv")
+    from churn_compass.pipelines.ingest_pipeline import data_ingestion_flow
+    data_ingestion_flow(input_path="data/raw/customers.csv", output_path="output.parquet")
 """
 
 import argparse
 from pathlib import Path
 from datetime import datetime
-from typing import Union
+from typing import Optional, Union
 import pandas as pd
 from prefect import flow, task
 
@@ -48,7 +44,7 @@ def extract_raw_data(input_path: str) -> pd.DataFrame:
     :return: Raw DataFrame
     :rtype: DataFrame
     """
-    logger.info(f"Extracting data from: {input_path}")
+    logger.info(f"Extracting raw data from: {input_path}")
 
     try:
         df =FileIO().read_csv(input_path)
@@ -64,7 +60,11 @@ def extract_raw_data(input_path: str) -> pd.DataFrame:
 
         return df
     except Exception as e:
-        logger.error(f"Failed to extract data from {input_path}", exc_info=True)
+        logger.error(f"Failed to extract data from {input_path}", 
+                     extra={"status": "error", 
+                            "error_type": type(e).__name__, 
+                            "error_message": str(e)}, 
+                            exc_info=True)
         raise
 
 @task(name="validate_data", retries=1)
@@ -95,14 +95,19 @@ def validate_data(df: pd.DataFrame) -> pd.DataFrame:
         return validated_df
     
     except Exception as e:
-        logger.error("Data validation failed", exc_info=True)
+        logger.error("Data validation failed", 
+                     extra={"status": "error", 
+                            "error_type": type(e).__name__, 
+                            "error_message": str(e)}, 
+                            exc_info=True
+                    )
         raise
 
 @task(name="clean_data", retries=1)
 @log_execution_time(logger)
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Clean data by removing leakage columns and duplicates.
+    Clean data by removing leakage columns, duplicates and nulls.
     
     :param df: Validated DataFrame
     :type df: pd.DataFrame
@@ -111,41 +116,52 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     logger.info("Cleaning data...")
 
-    original_rows = len(df)
-    original_cols = len(df.columns)
+    try:
+        original_row_count = len(df)
+        original_col_count = len(df.columns)
 
-    # Detect and remove leakage columns
-    leakage_cols = detect_leakage_columns(df)
-    if leakage_cols:
-        logger.warning(f"Dropping leakage columns: {leakage_cols}")
-        df = df.drop(columns=leakage_cols)
+        # Detect and remove leakage columns
+        leakage_cols = detect_leakage_columns(df)
+        if leakage_cols:
+            logger.warning(f"Dropping leakage columns: {leakage_cols}")
+            df = df.drop(columns=leakage_cols)
 
-    # Remove duplicates
-    n_duplicates = df.duplicated().sum()
-    if n_duplicates > 0:
-        logger.warning(f"Removing {n_duplicates} duplicate rows")
-        df = df.drop_duplicates()
+        # Remove duplicates
+        n_duplicates = df.duplicated().sum()
+        if n_duplicates > 0:
+            logger.warning(f"Removing {n_duplicates} duplicate rows")
+            df = df.drop_duplicates()
 
-    # Remove any remaining null values
-    # This is fine in our dataset, as it won't have any important values missing
-    n_nulls = df.isnull().sum().sum()
-    if n_nulls > 0:
-        logger.warning(f"Dropping {n_nulls} null values")
-        df = df.dropna()
+        # Remove any remaining null values
+        # Our data agreement guarantees that there won't be any null values
+        # Otherwise this can cause issues (not a good idea to drop null values in data ingestion)
+        n_nulls = df.isnull().sum().sum()
+        if n_nulls > 0:
+            logger.warning(f"Dropping {n_nulls} null values")
+            df = df.dropna()
 
-    logger.info(
-        "Data cleaning completed", 
-        extra={
-            "original_rows": original_rows, 
-            "cleaned_rows": len(df), 
-            "rows_removed": original_rows - len(df), 
-            "original_columns": original_cols, 
-            "cleaned_columns": len(df.columns), 
-            "columns_removed": original_cols - len(df.columns)
-        }
-    )
+        logger.info(
+            "Data cleaning completed", 
+            extra={
+                "original_row_count": original_row_count, 
+                "cleaned_row_count": len(df), 
+                "rows_removed": original_row_count - len(df), 
+                "original_column_count": original_col_count, 
+                "cleaned_column_count": len(df.columns), 
+                "columns_removed": original_col_count - len(df.columns)
+            }
+        )
 
-    return df
+        return df
+    
+    except Exception as e:
+        logger.error("Data cleaning failed", 
+                     extra={"status": "error", 
+                            "error_type": type(e).__name__, 
+                            "error_message": str(e)}, 
+                            exc_info=True
+                    )
+        raise
 
 @task(name="load_processed_data", retries=2)
 @log_execution_time(logger)
@@ -169,142 +185,93 @@ def load_processed_data(df: pd.DataFrame, output_path: str) -> str:
         FileIO().write_parquet(df, output_path, compression="snappy")
 
         # verify file was written
-        output_path_obj = Path(output_path)
+        output_path_obj = Path(output_path).absolute()
         file_size_mb = output_path_obj.stat().st_size / (1024 ** 2)
 
         logger.info(
             "Data loading completed", 
             extra={
-                "output_pat": output_path, 
+                "output_path_parameter": output_path,
+                "output_path_saved": output_path_obj, 
                 "file_size_mb": round(file_size_mb, 2), 
                 "rows_written": len(df), 
                 "columns_written": len(df.columns)
             }
         )
 
-        return str(output_path_obj.absolute())
+        return str(output_path_obj)
     
     except Exception as e:
-        logger.error(f"Failed to load data to {output_path}", exc_info=True)
+        logger.error(f"Failed to load (write) data to {output_path}", 
+                     extra={"status": "error", 
+                            "error_type": type(e).__name__, 
+                            "error_message": str(e)}, 
+                            exc_info=True
+                        )
         raise
 
+
+# Main Pipeline
 @flow(
     name="ingest_customer_data", 
     description="ETL pipeline for ingesting and validating customer churn data", 
     log_prints=True
 )
-def ingest_flow(
-    input_path: Union[str, Path], 
-    output_path: Union[str, Path]
-) -> str:
+def data_ingestion_flow(
+    input_path: Optional[str], 
+    output_path: Optional[str]
+) -> Optional[str]:
     """
     Main ingestion flow: Extract -> Validate -> Clean -> Load
     
     :param input_path: Path to input CSV file (default: data/raw/sample.csv)
     :type input_path: Optional[str]
-    :param output_path: Path to output Parquet file (default: data/processed/customers_YYYYMMDD.parquet)
+    :param output_path: Path to output Parquet file (default: data/processed/customers_YYYYMMDD.parquet). If output not provided → auto-create timestamped file.
     :type output_path: Optional[str]
     :return: Path to processed Parquet file
-    :rtype: str
+    :rtype: Optional[str]
     Example:
-        >>> from churn_compass.pipelines.ingest_pipeline import ingest_flow
-        >>> result = ingest_flow(input_path="data/raw/customers.csv")
+        >>> from churn_compass.pipelines.ingest_pipeline import data_ingestion_flow
+        >>> result = data_ingestion_flow(input_path="data/raw/customers.csv", output_path="data/processed/customers_YYYYMMDD.parquet")
     """
-    # set default paths
-    if input_path is None:
-        input_path = settings.data_raw_dir / "sample.csv"
-
-    if output_path is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_path = settings.data_processed_dir / f"customers_{timestamp}.parquet"
-
-    logger.info(
-        "starting ingestion flow", 
-        extra={
-            "input_path": input_path, 
-            "output_path": output_path, 
-            "environment": settings.environment
-        }
-    )
-
-    # Execute pipeline
-    raw_data = extract_raw_data(str(input_path))
-    validated_data = validate_data(raw_data)
-    cleaned_data = clean_data(validated_data)
-    result_path = load_processed_data(cleaned_data, str(output_path))
-
-    logger.info(
-        "Ingestion flow completed successfully", 
-        extra={"result_path": result_path}
-    )
-
-    return result_path
-
-
-def main():
-    """CLI entry point for running the ingestion pipeline."""
-    parser = argparse.ArgumentParser(description="Run Churn Compass ingestion pipeline")
-    parser.add_argument(
-        "--input", 
-        type=str, 
-        help="Path to input CSV file", 
-        default=None
-    )
-    parser.add_argument(
-        "--output", 
-        type=str, 
-        help="Path to output Parquet file", 
-        default=None
-    )
-    parser.add_argument(
-        "--demo", 
-        action="store-true", 
-        help="Run demo with sample data"
-    )
-
-    args = parser.parse_args()
-
-    if args.demo:
-        print("=" * 70)
-        print("Running Churn Ingestion Pipeline - DEMO MODE")
-        print("=" * 70)
-
-        # use sample file
-        input_path = str(settings.data_raw_dir / "sample.csv")
-        output_path = str(settings.data_processed_dir / "sample.parquet")
-    else:
-        input_path = args.input
-        output_path = args.output
-    
     try:
-        result = ingest_flow(input_path=input_path, output_path=output_path)
+        # set default paths
+        if output_path is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_path = str(settings.data_processed_dir / f"customers_{timestamp}.parquet")
 
-        print("\n" + "=" * 80)
-        print("✅ INGESTION PIPELINE COMPLETED SUCCESSFULLY")
-        print("=" * 80)
-        print(f"Processed data written to: {result}")
+        if input_path is None:
+            input_path = str(settings.data_raw_dir / "sample.csv")
 
-        # Display file info
-        result_path = Path(result)
-        if result_path.exists():
-            size_mb = result_path.stat().st_size / (1024 ** 2)
-            print(f"File size: {size_mb:.2f} MB")
 
-            # Read and display summary
-            df = FileIO().read_parquet(result)
-            print(f"\nData Summary:")
-            print(f"    Rows: {len(df):,}")
-            print(f"    Columns: {len(df.columns)}")
-            print(f"    Churn rate: {df['Exited'].mean():.2%}")
-            print(f"    Columns: {', '.join(df.columns)}")
 
+        logger.info(
+            "starting ingestion flow", 
+            extra={
+                "input_path": input_path, 
+                "output_path": output_path, 
+                "environment": settings.environment
+            }
+        )
+
+        # Execute pipeline
+        df_raw = extract_raw_data(input_path)
+        df_valid = validate_data(df_raw)
+        df_clean = clean_data(df_valid)
+        result_path = load_processed_data(df_clean, output_path)
+
+        logger.info(
+            "Ingestion flow completed successfully", 
+            extra={"result_path": result_path}
+        )
+
+        return result_path
+    
     except Exception as e:
-        print("\n" + "=" * 70)
-        print("❌ INGESTION PIPELINE FAILED")
-        print("=" * 80)
-        print(f"Error: {str(e)}")
-        logger.error("Pipeline execution failed", exc_info=True)
-        raise
-
-if __name__ == "__main__":
-    main()
+        logger.error("Failed to run data ingestion pipeline", 
+                     extra={"status": "error", 
+                            "error_type": type(e).__name__, 
+                            "error_message": str(e)}, 
+                            exc_info=True
+                        )
+        raise 
