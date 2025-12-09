@@ -14,10 +14,9 @@ Usage:
     data_ingestion_flow(input_path="data/raw/customers.csv", output_path="output.parquet")
 """
 
-import argparse
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Union
+from typing import Optional
 import pandas as pd
 from prefect import flow, task
 
