@@ -39,6 +39,11 @@ RAW_SCHEMA = DataFrameSchema(
         "Geography": Column(
             str, 
             nullable=False,
+            checks=Check.isin(["France", "Spain", "Germany"])
+        ),
+        "Gender": Column(
+            str, 
+            nullable=False, 
             checks=Check.isin(["Male", "Female"])
         ),
         "Age": Column(
@@ -54,7 +59,7 @@ RAW_SCHEMA = DataFrameSchema(
             nullable=False,
             checks=[
                 Check.greater_than_or_equal_to(0),
-                Check.greater_than_or_equal_to(10)
+                Check.less_than_or_equal_to(10)
             ]
         ),
         "Balance": Column(
