@@ -26,11 +26,11 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-    env_file=".env",
-    env_file_encoding="utf-8",
-    case_sensitive=False,
-    env_prefix="CHURN_COMPASS_",
-    extra="ignore"
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        env_prefix="CHURN_COMPASS_",
+        extra="ignore",
     )
 
     # Project Metadata
@@ -83,7 +83,6 @@ class Settings(BaseSettings):
     # API Configuration
     api_host: str = Field(default="0.0.0.0")
     api_port: int = Field(default=8000)
-
 
     # logging Configuration
     log_level: str = Field(default="INFO")
