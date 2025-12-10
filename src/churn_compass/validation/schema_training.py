@@ -29,91 +29,69 @@ RAW_SCHEMA = DataFrameSchema(
         "CustomerId": Column(int, nullable=False),
         "Surname": Column(str, nullable=False),
         "CreditScore": Column(
-            int, 
+            int,
             nullable=False,
             checks=[
                 Check.greater_than_or_equal_to(300),
-                Check.less_than_or_equal_to(850)
-            ]
+                Check.less_than_or_equal_to(850),
+            ],
         ),
         "Geography": Column(
-            str, 
-            nullable=False,
-            checks=Check.isin(["France", "Spain", "Germany"])
+            str, nullable=False, checks=Check.isin(["France", "Spain", "Germany"])
         ),
-        "Gender": Column(
-            str, 
-            nullable=False, 
-            checks=Check.isin(["Male", "Female"])
-        ),
+        "Gender": Column(str, nullable=False, checks=Check.isin(["Male", "Female"])),
         "Age": Column(
-            int, 
+            int,
             nullable=False,
             checks=[
                 Check.greater_than_or_equal_to(18),
-                Check.less_than_or_equal_to(100)
-            ]
+                Check.less_than_or_equal_to(100),
+            ],
         ),
         "Tenure": Column(
-            int, 
+            int,
             nullable=False,
-            checks=[
-                Check.greater_than_or_equal_to(0),
-                Check.less_than_or_equal_to(10)
-            ]
+            checks=[Check.greater_than_or_equal_to(0), Check.less_than_or_equal_to(10)],
         ),
         "Balance": Column(
-            float, 
-            nullable=False, 
-            checks=Check.greater_than_or_equal_to(0)
+            float, nullable=False, checks=Check.greater_than_or_equal_to(0)
         ),
         "NumOfProducts": Column(
-            int, 
-            nullable=False, 
-            checks=[
-                Check.greater_than_or_equal_to(1), 
-                Check.less_than_or_equal_to(4)
-            ]
-        ), 
-        "HasCrCard": Column(
-            int, 
-            nullable=False, 
-            checks=Check.isin([0, 1])
+            int,
+            nullable=False,
+            checks=[Check.greater_than_or_equal_to(1), Check.less_than_or_equal_to(4)],
         ),
-        "IsActiveMember": Column(
-            int, 
-            nullable=False, 
-            checks=Check.isin([0, 1])
-        ), 
+        "HasCrCard": Column(int, nullable=False, checks=Check.isin([0, 1])),
+        "IsActiveMember": Column(int, nullable=False, checks=Check.isin([0, 1])),
         "EstimatedSalary": Column(
             float,
             nullable=False,
             checks=[
-                Check.greater_than_or_equal_to(0), 
-                Check.less_than_or_equal_to(200000)
-            ]
-        ), 
+                Check.greater_than_or_equal_to(0),
+                Check.less_than_or_equal_to(200000),
+            ],
+        ),
         "Exited": Column(
-            int, 
-            nullable=False, 
-            checks=Check.isin([0, 1]), 
-            description="Target variable: 1 = customer churned, 0 = retained"
+            int,
+            nullable=False,
+            checks=Check.isin([0, 1]),
+            description="Target variable: 1 = customer churned, 0 = retained",
         ),
     },
-    strict=False,   # Allow extra columns (Complain, Satisfaction Score) in raw data
-    coerce=True     # Attempt type coercion
-)   
+    strict=False,  # Allow extra columns (Complain, Satisfaction Score) in raw data
+    coerce=True,  # Attempt type coercion
+)
 
 # Training data schema - after cleaning and feature engineering
 TRAINING_SCHEMA = DataFrameSchema(
-    columns = {
+    columns={
         "CreditScore": Column(
-            int, 
-            nullable=False, 
+            int,
+            nullable=False,
             checks=[
                 Check.greater_than_or_equal_to(300),
-                Check.less_than_or_equal_to(850)
-            ]
+                Check.less_than_or_equal_to(850),
+            ],
         ),
         "Geography": Column(str, nullable=False),
         "Gender": Column(str, nullable=False),
@@ -126,15 +104,15 @@ TRAINING_SCHEMA = DataFrameSchema(
         "EstimatedSalary": Column(float, nullable=False),
         "Exited": Column(int, nullable=False),
     },
-    strict=True,    # Here don't allow extra columns
-    coerce=True
+    strict=True,  # Here don't allow extra columns
+    coerce=True,
 )
 
 
 def detect_leakage_columns(df: pd.DataFrame) -> List[str]:
     """
     Detect potential data leakage columns in DataFrame
-    
+
     :param df: Input DataFrame
     :type df: pd.DataFrame
     :return: List of column names that may cause leakage
@@ -146,29 +124,30 @@ def detect_leakage_columns(df: pd.DataFrame) -> List[str]:
     for col in settings.leakage_columns:
         if col in df.columns:
             leakage_cols.append(col)
-    
+
     # check against ID columns
     for col in settings.id_columns:
         if col in df.columns:
             leakage_cols.append(col)
-    
+
     # Block engineered prediction-like columns
     for col in df.columns:
         if col.startswith("pred") or col.startswith("shap"):
             leakage_cols.append(col)
-    
+
     if leakage_cols:
         logger.warning(
-            f"Detected potential leakage columns: {leakage_cols}", 
-            extra={"leakage_columns": leakage_cols}
+            f"Detected potential leakage columns: {leakage_cols}",
+            extra={"leakage_columns": leakage_cols},
         )
 
     return leakage_cols
-    
+
+
 def validate_raw_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     Validate raw input data against RAW_SCHEMA.
-    
+
     :param df: Raw DataFrame
     :type df: pd.DataFrame
     :return: Validated DataFrame
@@ -180,23 +159,21 @@ def validate_raw_data(df: pd.DataFrame) -> pd.DataFrame:
         validated_df = RAW_SCHEMA.validate(df, lazy=True)
 
         logger.info(
-            "Raw data validation passed", 
-            extra={
-                "rows": len(validated_df), 
-                "columns": len(validated_df.columns)
-            }
+            "Raw data validation passed",
+            extra={"rows": len(validated_df), "columns": len(validated_df.columns)},
         )
-        
+
         return validated_df
     except errors.SchemaError as e:
         logger.error("Raw data validation failed", exc_info=True)
         logger.error(f"Schema errors:\n{e}")
         raise
 
+
 def validate_training_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     Validate cleaned training data against TRAINING_SCHEMA
-    
+
     :param df: Cleaned DataFrame ready for training
     :type df: pd.DataFrame
     :return: Validated DataFrame
@@ -213,7 +190,7 @@ def validate_training_data(df: pd.DataFrame) -> pd.DataFrame:
                 f"Found leakage columns in training data: {leakage_cols}"
                 f"These must be removed before training."
             )
-        
+
         # validate against schema
         validated_df = TRAINING_SCHEMA.validate(df, lazy=True)
 
@@ -222,53 +199,61 @@ def validate_training_data(df: pd.DataFrame) -> pd.DataFrame:
         _check_data_quality(validated_df)
 
         logger.info(
-            "Training data validation passed", 
+            "Training data validation passed",
             extra={
-                "rows": len(validated_df), 
-                "columns": len(validated_df.columns), 
-                "churn_rate": validated_df["Exited"].mean()
-            }
+                "rows": len(validated_df),
+                "columns": len(validated_df.columns),
+                "churn_rate": validated_df["Exited"].mean(),
+            },
         )
 
         return validated_df
-    
+
     except errors.SchemaError as e:
-        logger.error("Training data validation failed", exc_info=True)
+        logger.error(
+            "Training data validation failed",
+            extra={"error_type": type(e).__name__},
+            exc_info=True,
+        )
         raise
 
 
-def _check_class_imbalance(df: pd.DataFrame, min_minority_pct: float=0.05) -> None:
+def _check_class_imbalance(df: pd.DataFrame, min_minority_pct: float = 0.05) -> None:
     """
     Check if target variable has sufficient minority class representation.
-    
+
     :param df: DataFrame with 'Exited' target column
     :type df: pd.DataFrame
     :param min_minority_pct: Minimum percentage for minority class
     :type min_minority_pct: float
     :raise: ValueError: If minority class is below threshold
     """
-    churn_rate = df['Exited'].mean()
+    churn_rate = df["Exited"].mean()
     minority_pct = min(churn_rate, 1 - churn_rate)
 
     if minority_pct < min_minority_pct:
         logger.warning(
-            f"Severe class imbalance detected: minority class = {minority_pct:.2%}", 
-            extra={"churn_rate": churn_rate, "minority_pct": minority_pct}
+            f"Severe class imbalance detected: minority class = {minority_pct:.2%}",
+            extra={"churn_rate": churn_rate, "minority_pct": minority_pct},
         )
         raise ValueError(
             f"Minority class too small: {minority_pct:.2%} < {min_minority_pct:.2%}. "
             f"Consider collecting more data or adjusting thresholds"
         )
-    
+
     logger.info(
-        "Class balance check passed", 
-        extra={"churn_rate": f"{churn_rate:.2%}", "minority_pct": f"{minority_pct:.2%}"}
+        "Class balance check passed",
+        extra={
+            "churn_rate": f"{churn_rate:.2%}",
+            "minority_pct": f"{minority_pct:.2%}",
+        },
     )
 
-def _check_data_quality(df: pd.DataFrame, max_missing_pct: float=0.05) -> None:
+
+def _check_data_quality(df: pd.DataFrame, max_missing_pct: float = 0.05) -> None:
     """
     Check data quality metrics.
-    
+
     :param df: DataFrame to check
     :type df: pd.DataFrame
     :param max_missing_pct: Maximum allowed percentage of missing values per column
@@ -281,25 +266,25 @@ def _check_data_quality(df: pd.DataFrame, max_missing_pct: float=0.05) -> None:
 
     if not problematic_cols.empty:
         logger.error(
-            f"Columns with excessive missing values: {problematic_cols.to_dict()}", 
-            extra={"problematic_columns": problematic_cols.to_dict()}
+            f"Columns with excessive missing values: {problematic_cols.to_dict()}",
+            extra={"problematic_columns": problematic_cols.to_dict()},
         )
         raise ValueError(
             f"Found columns with >{max_missing_pct:.1%} missing values: "
             f"{list(problematic_cols.index)}"
         )
-    
+
     # check for duplicate rows
     n_duplicates = df.duplicated().sum()
     if n_duplicates > 0:
         logger.warning(
-            f"Found {n_duplicates} duplicate rows", 
-            extra={"n_duplicates": n_duplicates, "pct_duplicates": n_duplicates / len(df)}
+            f"Found {n_duplicates} duplicate rows",
+            extra={
+                "n_duplicates": n_duplicates,
+                "pct_duplicates": n_duplicates / len(df),
+            },
         )
     logger.info(
-        "Data quality checks passed", 
-        extra={
-            "max_missing_pct": missing_pct.max(), 
-            "n_duplicates": n_duplicates
-        }
+        "Data quality checks passed",
+        extra={"max_missing_pct": missing_pct.max(), "n_duplicates": n_duplicates},
     )
