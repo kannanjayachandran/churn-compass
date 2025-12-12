@@ -23,10 +23,11 @@ from typing import Any, Dict, Optional
 
 from churn_compass.config.settings import settings
 
-# Track configured loggers
+# Track configured loggers to avoid duplicate handlers
 _configured_loggers = set()
 
 
+# Formatters
 class JSONFormatter(logging.Formatter):
     """
     Custom JSON formatter for structured logging
@@ -36,6 +37,14 @@ class JSONFormatter(logging.Formatter):
     def __init__(self, include_extra: bool = True):
         super().__init__()
         self.include_extra = include_extra
+
+    def _safe_serialize(self, obj: Any) -> Any:
+        """Avoid breaking JSON logging if objects are not serializable"""
+        try:
+            json.dumps(obj)
+            return obj
+        except Exception:
+            return str(obj)
 
     def format(self, record: logging.LogRecord) -> str:
         """Format log record as JSON string"""
@@ -49,43 +58,22 @@ class JSONFormatter(logging.Formatter):
             "line": record.lineno,
         }
 
-        # Add Exception info if present
+        # Exception info
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)
 
-        # Add extra fields (context) if enabled
+        # Extra context fields
         if self.include_extra:
-            extra_fields = {
+            extra_keys = {
                 k: v
                 for k, v in record.__dict__.items()
-                if k
-                not in [
-                    "name",
-                    "msg",
-                    "args",
-                    "created",
-                    "filename",
-                    "funcName",
-                    "levelname",
-                    "levelno",
-                    "lineno",
-                    "module",
-                    "msecs",
-                    "message",
-                    "pathname",
-                    "process",
-                    "processName",
-                    "relativeCreated",
-                    "thread",
-                    "threadName",
-                    "exc_info",
-                    "exc_text",
-                    "stack_info",
-                    "taskName",
-                ]
+                if k not in logging.LogRecord("", 0, "", 0, "", (), None).__dict__
             }
-            if extra_fields:
-                log_data["context"] = extra_fields
+
+            if extra_keys:
+                extra_keys = {k: self._safe_serialize(v) for k, v in extra_keys.items()}
+                log_data["context"] = mask_pii(extra_keys)
+
         return json.dumps(log_data)
 
 
@@ -99,6 +87,7 @@ class TextFormatter(logging.Formatter):
         )
 
 
+# PII masking
 def mask_pii(
     data: Dict[str, Any], fields_to_mask: Optional[list] = None
 ) -> Dict[str, Any]:
@@ -114,10 +103,8 @@ def mask_pii(
     """
     if fields_to_mask is None:
         fields_to_mask = [
-            "CustomerId",
             "customerid",
             "customer_id",
-            "Surname",
             "surname",
             "last_name",
             "email",
@@ -125,15 +112,17 @@ def mask_pii(
             "ssn",
             "password",
         ]
-    masked_data = data.copy()
+
+    masked = data.copy()
+    lower_keys = {k.lower(): k for k in masked.keys()}
+
     for field in fields_to_mask:
-        if field in masked_data:
-            value = str(masked_data[field])
-            if len(value) > 4:
-                masked_data[field] = f"***{value[-4:]}"
-            else:
-                masked_data[field] = "***"
-    return masked_data
+        if field.lower() in lower_keys:
+            k = lower_keys[field.lower()]
+            v = str(masked[k])
+            masked[k] = f"***{v[-4]}" if len(v) > 4 else "***"
+
+    return masked
 
 
 def setup_logger(
@@ -161,14 +150,17 @@ def setup_logger(
     if name in _configured_loggers:
         return logger
 
-    # set level from parameter or settings
-    log_level = level or settings.log_level
-    logger.setLevel(getattr(logging, log_level.upper()))
+    # resolve level (log_level is guaranteed to be a string here)
+    log_level_str = level or settings.log_level
+
+    # int representation of log level
+    log_level_int = getattr(logging, log_level_str.upper())
+    logger.setLevel(log_level_int)
 
     # console handler
     if log_to_console:
         console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(logging.DEBUG)
+        console_handler.setLevel(log_level_int)
 
         console_handler.setFormatter(
             JSONFormatter() if settings.log_format == "json" else TextFormatter()
@@ -218,7 +210,6 @@ def log_execution_time(logger: logging.Logger):
                 logger.info(
                     f"Function {func.__name__} completed",
                     extra={
-                        "function": func.__name__,
                         "execution_time_seconds": round(execution_time, 3),
                         "status": "success",
                     },
