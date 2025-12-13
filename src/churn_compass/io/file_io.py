@@ -8,11 +8,10 @@ Features:
 - Local file operations (CSV, Parquet)
 - S3 support (placeholder for production)
 - DuckDB integration for fast SQL queries on local files
-- Type hints and error handling
 """
 
 from pathlib import Path
-from typing import Optional, Union, List, Literal
+from typing import Optional, Union, List, Literal, Dict
 import pandas as pd
 import duckdb
 
@@ -25,7 +24,7 @@ logger = setup_logger(__name__)
 
 class FileIO:
     """
-    File I/O Operations for local and cloud storage.
+    Unified interface for reading/writing CSV/Parquet and running DuckDB queries.
 
     Supports:
     - CSV and Parquet formats
@@ -39,6 +38,7 @@ class FileIO:
         self.s3_bucket = settings.s3_bucket
         self.s3_prefix = settings.s3_prefix
 
+    # CSV
     def read_csv(self, filepath: Union[str, Path], **kwargs) -> pd.DataFrame:
         """
         Read CSV file from local filesystem or S3.
@@ -68,11 +68,11 @@ class FileIO:
                 },
             )
             return df
+        
         except Exception as e:
             logger.error(
-                "Failed to read csv",
+                f"Failed to read csv for file: {str(filepath)}",
                 extra={
-                    "filepath": str(filepath),
                     "error_type": type(e).__name__,
                 },
                 exc_info=True,
@@ -98,6 +98,7 @@ class FileIO:
 
                 logger.info("Writing CSV to local", extra={"filepath": str(filepath)})
                 df.to_csv(filepath, index=False, **kwargs)
+
             logger.info(
                 "Wrote CSV successfully",
                 extra={
@@ -108,15 +109,15 @@ class FileIO:
             )
         except Exception as e:
             logger.error(
-                "Failed to write CSV",
+                f"Failed to write CSV for file: {str(filepath)}",
                 extra={
-                    "filepath": str(filepath),
                     "error_type": type(e).__name__,
                 },
                 exc_info=True,
             )
             raise
 
+    # Parquet
     def read_parquet(
         self, filepath: Union[str, Path], columns: Optional[List[str]] = None, **kwargs
     ) -> pd.DataFrame:
@@ -154,11 +155,11 @@ class FileIO:
                 },
             )
             return df
+        
         except Exception as e:
             logger.error(
-                "Failed to read Parquet",
+                f"Failed to read Parquet for file: {str(filepath)}",
                 extra={
-                    "filepath": str(filepath),
                     "error_type": type(e).__name__,
                 },
                 exc_info=True,
@@ -208,16 +209,15 @@ class FileIO:
             )
         except Exception as e:
             logger.error(
-                "Failed to write parquet",
+                f"Failed to write parquet for file: {str(filepath)}",
                 extra={
-                    "filepath": str(filepath),
                     "error_type": type(e).__name__,
                 },
                 exc_info=True,
             )
             raise
 
-    def query_with_duckdb(self, sql: str, files: Optional[dict] = None) -> pd.DataFrame:
+    def query_with_duckdb(self, sql: str, files: Optional[dict[str, str]] = None) -> pd.DataFrame:
         """
         Execute SQL query on local files using DuckDB
 
@@ -239,26 +239,30 @@ class FileIO:
         try:
             conn = duckdb.connect(":memory:")
 
-            # Register file paths as tables if provided
+            # Register views
             if files:
                 for table_name, filepath in files.items():
-                    if Path(filepath).suffix == ".parquet":
+                    fp = str(filepath)
+                    if fp.endswith(".parquet"):
                         conn.execute(
-                            f"CREATE VIEW {table_name} AS SELECT * FROM read_parquet('{filepath}')"
+                            "CREATE VIEW ? AS SELECT * FROM read_parquet(?)", 
+                            [table_name, fp], 
                         )
-                    elif Path(filepath).suffix == ".csv":
+                    elif fp.endswith(".csv"):
                         conn.execute(
-                            f"CREATE VIEW {table_name} AS SELECT * FROM read_csv_auto('{filepath}')"
+                            "CREATE VIEW ? AS SELECT * FROM read_csv_auto(?)", 
+                            [table_name, fp]
                         )
+
             logger.info(f"Executing DuckDB query: {sql[:100]}...")
-            result = conn.execute(sql).fetch_df()
-            conn.close()
+            df = conn.execute(sql).fetch_df()
 
             logger.info(
-                "DuckDB query",
-                extra={"rows_returned": len(result), "columns": len(result.columns)},
+                "DuckDB query complete",
+                extra={"rows_returned": len(df), "columns": len(df.columns)},
             )
-            return result
+            return df
+        
         except Exception as e:
             logger.error(
                 "DuckDB query failed",
@@ -268,80 +272,28 @@ class FileIO:
                 exc_info=True,
             )
             raise
+
         finally:
-            if conn:
+            if conn is not None:
                 conn.close()
 
+    # Helpers
     def _is_s3_path(self, filepath: Union[str, Path]) -> bool:
         """
         Check if path is an S3 URI.
         """
-        return str(filepath).startswith(("s3://", "s3a://"))
+        return str(filepath).startswith(("s3://", "s3a://", "s3n://"))
+    
 
-    def _read_csv_from_s3(self, s3_path: str, **kwargs) -> pd.DataFrame:
-        """Read CSV from S3 (placeholder - require boto3)"""
-        if not self.s3_enabled:
-            raise ValueError("S3 is not enabled. Set CHURN_COMPASS_S3_ENABLED=true")
+    # S3 placeholders
+    def _read_csv_from_s3(self, s3_path: str, **kwargs):
+        raise NotImplementedError("S3 support not implemented. Install boto3 or s3fs.")
 
-        logger.info("Reading CSV from S3", extra={"filepath": str(s3_path)})
+    def _write_csv_to_s3(self, df, s3_path: str, **kwargs):
+        raise NotImplementedError("S3 support not implemented. Install boto3 or s3fs.")
 
-        # TODO: Implement S3 reading with boto3
-        # import boto3
-        # s3 = boto3.client('s3')
-        # obj = s3.get_object(Bucket=bucket, Key=key)
-        # return pd.read_csv(obj['Body'], **kwargs)
+    def _read_parquet_from_s3(self, s3_path: str, **kwargs):
+        raise NotImplementedError("S3 support not implemented. Install boto3 or s3fs.")
 
-        raise NotImplementedError(
-            "S3 read support coming soon. Install boto3 and configure AWS credentials."
-        )
-
-    def _write_csv_to_s3(self, df: pd.DataFrame, s3_path: str, **kwargs) -> None:
-        """Write CSV to S3 (placeholder - requires boto3)."""
-        if not self.s3_enabled:
-            raise ValueError("S3 is not enabled. Set CHURN_COMPASS_S3_ENABLED=true")
-
-        logger.info(f"Writing CSV to S3: {s3_path}")
-
-        # TODO: Implement S3 writing with boto3
-        # import boto3
-        # from io import StringIO
-        # s3 = boto3.client('s3')
-        # csv_buffer = StringIO()
-        # df.to_csv(csv_buffer, index=False, **kwargs)
-        # s3.put_object(Bucket=bucket, Key=key, Body=csv_buffer.getvalue())
-
-        raise NotImplementedError(
-            "S3 write support coming soon. Install boto3 and configure AWS credentials."
-        )
-
-    def _read_parquet_from_s3(
-        self, s3_path: str, columns: Optional[List[str]] = None, **kwargs
-    ) -> pd.DataFrame:
-        """Read Parquet from S3 (placeholder - requires boto3)."""
-        if not self.s3_enabled:
-            raise ValueError("S3 is not enabled. Set CHURN_COMPASS_S3_ENABLED=true")
-
-        logger.info(f"Reading Parquet from S3: {s3_path}")
-
-        # TODO: Implement with boto3 or use pd.read_parquet with s3fs
-        # return pd.read_parquet(s3_path, columns=columns, **kwargs)
-
-        raise NotImplementedError(
-            "S3 read support coming soon. Install boto3/s3fs and configure AWS credentials."
-        )
-
-    def _write_parquet_to_s3(
-        self, df: pd.DataFrame, s3_path: str, compression: str = "snappy", **kwargs
-    ) -> None:
-        """Write Parquet to S3 (placeholder - requires boto3)."""
-        if not self.s3_enabled:
-            raise ValueError("S3 is not enabled. Set CHURN_COMPASS_S3_ENABLED=true")
-
-        logger.info(f"Writing Parquet to S3: {s3_path}")
-
-        # TODO: Implement with boto3 or use df.to_parquet with s3fs
-        # df.to_parquet(s3_path, compression=compression, index=False, **kwargs)
-
-        raise NotImplementedError(
-            "S3 write support coming soon. Install boto3/s3fs and configure AWS credentials."
-        )
+    def _write_parquet_to_s3(self, df, s3_path: str, **kwargs):
+        raise NotImplementedError("S3 support not implemented. Install boto3 or s3fs.")
