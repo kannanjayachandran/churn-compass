@@ -6,30 +6,25 @@ Prefect-orchestrated ETL pipeline for ingesting and validating customer data.
 Pipeline steps:
 1. Extract: Read raw CSV data
 2. Validate: Apply Pandera schema validation
-3. Clean: Remove leakage columns, duplicates and nulls
-4. Load: Write validated data to Parquet
-
-Usage:
-    from churn_compass.pipelines.ingest_pipeline import data_ingestion_flow
-    data_ingestion_flow(input_path="data/raw/customers.csv", output_path="output.parquet")
+3. Load: Write validated data to Parquet
 """
 
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
+
 import pandas as pd
 from prefect import flow, task
 
 from churn_compass.config.settings import settings
 from churn_compass.logging.logger import setup_logger, log_execution_time
 from churn_compass.io.file_io import FileIO
-from churn_compass.validation.schema_training import (
-    validate_raw_data,
-    detect_leakage_columns,
-)
+from churn_compass.validation import validate_raw_data, detect_leakage_columns
+
 
 
 logger = setup_logger(__name__)
+file_io = FileIO()
 
 
 @task(name="extract_raw_data", retries=2)
@@ -43,37 +38,20 @@ def extract_raw_data(input_path: str) -> pd.DataFrame:
     :return: Raw DataFrame
     :rtype: DataFrame
     """
-    logger.info(f"Extracting raw data from: {input_path}")
+    logger.info("Extracting raw data", 
+                extra={"input_path": input_path})
 
-    try:
-        df = FileIO().read_csv(input_path)
+    df = file_io.read_csv(input_path)
 
-        logger.info(
+    logger.info(
             "Data extraction completed",
-            extra={
-                "rows": len(df),
-                "columns": len(df.columns),
-                "column_names": list(df.columns),
-            },
-        )
+            extra={"rows": len(df), "columns": len(df.columns),},
+    )
+    return df
 
-        return df
-    except Exception as e:
-        logger.error(
-            f"Failed to extract data from {input_path}",
-            extra={
-                "status": "error",
-                "error_type": type(e).__name__,
-                "error_message": str(e),
-            },
-            exc_info=True,
-        )
-        raise
-
-
-@task(name="validate_data", retries=1)
+@task(name="validate_raw_data", retries=1)
 @log_execution_time(logger)
-def validate_data(df: pd.DataFrame) -> pd.DataFrame:
+def validate_raw(df: pd.DataFrame) -> pd.DataFrame:
     """
     Validate raw data against schema.
 
@@ -82,97 +60,59 @@ def validate_data(df: pd.DataFrame) -> pd.DataFrame:
     :return: Validated DataFrame
     :rtype: DataFrame
     """
-    logger.info("Validating data schema...")
+    logger.info("Validating raw data schema")
+    validated = validate_raw_data(df)
 
-    try:
-        validated_df = validate_raw_data(df)
+    logger.info(
+        "Raw validation passed", 
+        extra={"rows": len(validated), "columns": len(validated.columns)}
+    )
 
-        # Report validation results
-        logger.info(
-            "Data validation passed",
-            extra={
-                "validated_rows": len(validated_df),
-                "validated_columns": len(validated_df.columns),
-            },
-        )
-
-        return validated_df
-
-    except Exception as e:
-        logger.error(
-            "Data validation failed",
-            extra={
-                "status": "error",
-                "error_type": type(e).__name__,
-                "error_message": str(e),
-            },
-            exc_info=True,
-        )
-        raise
-
+    return validated
 
 @task(name="clean_data", retries=1)
 @log_execution_time(logger)
-def clean_data(df: pd.DataFrame) -> pd.DataFrame:
+def clean_data(df: pd.DataFrame, drop_nulls: bool = True) -> pd.DataFrame:
     """
     Clean data by removing leakage columns, duplicates and nulls.
 
     :param df: Validated DataFrame
     :type df: pd.DataFrame
+    :param drop_nulls: Should we drop null values or not
+    :type drop_nulls: bool
     :return: Cleaned DataFrame
     :rtype: DataFrame
     """
-    logger.info("Cleaning data...")
+    logger.info("Cleaning data")
 
-    try:
-        original_row_count = len(df)
-        original_col_count = len(df.columns)
+    original_rows = len(df)
+    original_cols = len(df.columns)
 
-        # Detect and remove leakage columns
-        leakage_cols = detect_leakage_columns(df)
-        if leakage_cols:
-            logger.warning(f"Dropping leakage columns: {leakage_cols}")
-            df = df.drop(columns=leakage_cols)
+    leakage_cols = detect_leakage_columns(df)
+    if leakage_cols:
+        logger.warning(f"Dropping leakage columns: {leakage_cols}")
+        df = df.drop(columns=leakage_cols)
 
-        # Remove duplicates
-        n_duplicates = df.duplicated().sum()
-        if n_duplicates > 0:
-            logger.warning(f"Removing {n_duplicates} duplicate rows")
-            df = df.drop_duplicates()
-
-        # Remove any remaining null values
-        # Our data agreement guarantees that there won't be any null values
-        # Otherwise this can cause issues (not a good idea to drop null values in data ingestion)
+    n_duplicates = df.duplicated().sum()
+    if n_duplicates > 0:
+        logger.warning(f"Removing {n_duplicates} duplicate rows")
+        df = df.drop_duplicates()
+    
+    if drop_nulls:
         n_nulls = df.isnull().sum().sum()
-        if n_nulls > 0:
-            logger.warning(f"Dropping {n_nulls} null values")
+        if n_nulls:
+            logger.warning("Dropping rows with nulls", extra={"null_cells": n_nulls})
             df = df.dropna()
 
-        logger.info(
-            "Data cleaning completed",
-            extra={
-                "original_row_count": original_row_count,
-                "cleaned_row_count": len(df),
-                "rows_removed": original_row_count - len(df),
-                "original_column_count": original_col_count,
-                "cleaned_column_count": len(df.columns),
-                "columns_removed": original_col_count - len(df.columns),
+    logger.info(
+        "Data cleaning completed",
+        extra={
+            "rows_removed": original_rows - len(df), 
+            "columns_removed": original_cols - len(df.columns),
             },
         )
 
-        return df
-
-    except Exception as e:
-        logger.error(
-            "Data cleaning failed",
-            extra={
-                "status": "error",
-                "error_type": type(e).__name__,
-                "error_message": str(e),
-            },
-            exc_info=True,
-        )
-        raise
+    return df
 
 
 @task(name="load_processed_data", retries=2)
@@ -190,50 +130,35 @@ def load_processed_data(df: pd.DataFrame, output_path: str) -> str:
     """
     logger.info(f"Loading data to: {output_path}")
 
-    try:
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-        # Write to Parquet with Snappy compression
-        FileIO().write_parquet(df, output_path, compression="snappy")
+    # Write to Parquet with Snappy compression
+    file_io.write_parquet(df, output_path, compression="snappy")
 
-        # verify file was written
-        output_path_obj = Path(output_path).absolute()
-        file_size_mb = output_path_obj.stat().st_size / (1024**2)
+    output_path_obj = Path(output_path).absolute()
+    file_size_mb = output_path_obj.stat().st_size / (1024**2)
 
-        logger.info(
-            "Data loading completed",
-            extra={
-                "output_path_parameter": output_path,
-                "output_path_saved": output_path_obj,
-                "file_size_mb": round(file_size_mb, 2),
-                "rows_written": len(df),
-                "columns_written": len(df.columns),
-            },
-        )
+    logger.info(
+        "Data written",
+        extra={
+            "output_path": str(output_path_obj),
+            "rows": len(df),
+            "columns": len(df.columns),
+            "file_size_mb": round(file_size_mb, 2),
+        },
+    )
 
-        return str(output_path_obj)
-
-    except Exception as e:
-        logger.error(
-            f"Failed to load (write) data to {output_path}",
-            extra={
-                "status": "error",
-                "error_type": type(e).__name__,
-                "error_message": str(e),
-            },
-            exc_info=True,
-        )
-        raise
+    return str(output_path_obj.resolve())
 
 
-# Main Pipeline
 @flow(
     name="ingest_customer_data",
     description="ETL pipeline for ingesting and validating customer churn data",
     log_prints=True,
 )
 def data_ingestion_flow(
-    input_path: Optional[str], output_path: Optional[str]
+    input_path: Optional[str] = None, 
+    output_path: Optional[str] = None
 ) -> Optional[str]:
     """
     Main ingestion flow: Extract -> Validate -> Clean -> Load
@@ -244,50 +169,35 @@ def data_ingestion_flow(
     :type output_path: Optional[str]
     :return: Path to processed Parquet file
     :rtype: Optional[str]
-    Example:
-        >>> from churn_compass.pipelines.ingest_pipeline import data_ingestion_flow
-        >>> result = data_ingestion_flow(input_path="data/raw/customers.csv", output_path="data/processed/customers_YYYYMMDD.parquet")
     """
-    try:
-        # set default paths
-        if output_path is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_path = str(
-                settings.data_processed_dir / f"customers_{timestamp}.parquet"
-            )
 
-        if input_path is None:
-            input_path = str(settings.data_raw_dir / "sample.csv")
+    if input_path is None:
+        input_path = str(settings.data_raw_dir / "sample.csv")
 
-        logger.info(
-            "starting ingestion flow",
-            extra={
-                "input_path": input_path,
-                "output_path": output_path,
-                "environment": settings.environment,
-            },
+    if output_path is None:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = str(
+            settings.data_processed_dir / f"customers_{ts}.parquet"
         )
 
-        # Execute pipeline
-        df_raw = extract_raw_data(input_path)
-        df_valid = validate_data(df_raw)
-        df_clean = clean_data(df_valid)
-        result_path = load_processed_data(df_clean, output_path)
+    logger.info(
+        "Starting ingestion flow",
+        extra={
+            "input_path": input_path,
+            "output_path": output_path,
+            "environment": settings.environment,
+        },
+    )
 
-        logger.info(
-            "Ingestion flow completed successfully", extra={"result_path": result_path}
-        )
+    # Pipeline
+    df_raw = extract_raw_data(input_path)
+    df_valid = validate_raw(df_raw)
+    df_clean = clean_data(df_valid)
+    result = load_processed_data(df_clean, output_path)
 
-        return result_path
+    logger.info(
+        "Ingestion flow completed successfully", extra={"result_path": result}
+    )
 
-    except Exception as e:
-        logger.error(
-            "Failed to run data ingestion pipeline",
-            extra={
-                "status": "error",
-                "error_type": type(e).__name__,
-                "error_message": str(e),
-            },
-            exc_info=True,
-        )
-        raise
+    return result
+
