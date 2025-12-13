@@ -1,22 +1,24 @@
 """
 Churn Compass - Database I/O Layer
 
-Database operations for PostgreSQL with fallback to DuckDB for local development.
+PostgreSQL for production, DuckDB for local development.
 
 Features:
 - PostgreSQL connection management with SQLAlchemy
 - Read queries to DataFrame
-- Write DataFrame to tables
+- Execute DDL/DML statements
 - DuckDB fallback for local development
 - Connection pooling and error handling
 """
 
-from typing import Optional
+from typing import Optional, cast
 from contextlib import contextmanager
+
 import pandas as pd
-from sqlalchemy import create_engine, text, inspect
-from sqlalchemy.engine import Engine
 import duckdb
+from sqlalchemy import create_engine, text, inspect
+from sqlalchemy.engine import Engine, Connection
+from sqlalchemy.sql import Executable
 
 from churn_compass.config.settings import settings
 from churn_compass.logging.logger import setup_logger
@@ -26,273 +28,182 @@ logger = setup_logger(__name__)
 
 
 class DatabaseIO:
-    """Database operations supporting PostgreSQL and DuckDB
+    """
+    Database operations for PostgreSQL and DuckDB.
 
-    Uses settings.db_type to determine which database to use:
-    - 'postgres': Production PostgreSQL database
-    - 'duckdb': Local DuckDB file for development
+    db_type:
+    - 'postgres': Production PostgreSQL
+    - 'duckdb': Local DuckDB
     """
 
     def __init__(self, db_type: Optional[str] = None):
-        """
-        Initialize database connection
-
-        :param db_type: Override settings.db_type ('postgres' or 'duckdb')
-        :type db_type: Optional[str]
-        """
         self.db_type = db_type or settings.db_type
         self._engine: Optional[Engine] = None
-        self._duckdb_conn = None
-
         logger.info("Initializing DatabaseIO", extra={"db_type": self.db_type})
 
+    
+    # PostgreSQL
     @property
     def engine(self) -> Engine:
         """
         Get or create SQLAlchemy engine for PostgreSQL
-
-        :return: SQLAlchemy engine
+        
+        :return: SQLAlchemy Engine
         :rtype: Engine
         """
         if self.db_type != "postgres":
-            raise ValueError(
-                f"Engine only available for postgres, current type: {self.db_type}"
-            )
+            raise ValueError("SQLAlchemy engine is only available for postgres")
 
         if self._engine is None:
             try:
-                connection_uri = settings.get_postgres_uri()
-
-                # Create engine with connection pooling
+                uri = settings.get_postgres_uri()
                 self._engine = create_engine(
-                    connection_uri,
-                    pool_pre_ping=True,  # verify connections before using
+                    uri,
+                    pool_pre_ping=True,
                     pool_size=5,
                     max_overflow=10,
-                    echo=False,  # Set to True for SQL logging
+                    echo=False, # Set True for SQL logging
                 )
 
-                # Test connection
+                # sanity check
                 with self._engine.connect() as conn:
                     conn.execute(text("SELECT 1"))
 
                 logger.info("PostgreSQL connection established")
+
             except Exception as e:
-                logger.error(
-                    "Failed to connect to PostgreSQL",
-                    extra={
-                        "status": "error",
-                        "error_type": type(e).__name__,
-                    },
-                    exc_info=True,
-                )
+                logger.exception("Failed to initialize PostgreSQL engine", extra={
+                    "status": "error", 
+                    "error_type": type(e).__name__, 
+                }, )
                 raise
 
         return self._engine
 
-    @property
-    def duckdb_conn(self):
-        """
-        Get or create DuckDB connection
-
-        :return: DuckDB connection
-        """
-        if self.db_type != "duckdb":
-            raise ValueError(
-                f"DuckDB connection only available for duckdb type, current: {self.db_type}"
-            )
-        if self._duckdb_conn is None:
-            try:
-                db_path = str(settings.duckdb_path)
-                self._duckdb_conn = duckdb.connect(db_path)
-                logger.info(
-                    "DuckDB connection established", extra={"filepath": str(db_path)}
-                )
-            except Exception as e:
-                logger.error(
-                    "Failed to connect to DuckDB",
-                    extra={
-                        "status": "error",
-                        "error_type": type(e).__name__,
-                    },
-                    exc_info=True,
-                )
-                raise
-        return self._duckdb_conn
-
+    # Connections
     @contextmanager
     def get_connection(self):
         """
-        Context manager for database connection
+        Context-managed database connection.
 
-        Usage:
-            with db.get_connection() as conn:
-                df = pd.read_sql("SELECT * FROM table", conn)
+        - Postgres: transactional connection
+        - DuckDB: open-per-use to avoid file locking
         """
         if self.db_type == "postgres":
-            conn = self.engine.connect()
+            with self.engine.begin() as conn:
+                yield conn
+        else:
+            conn = duckdb.connect(str(settings.duckdb_path))
             try:
                 yield conn
             finally:
                 conn.close()
-        else:
-            yield self.duckdb_conn
 
+    # Read Queries
     def read_query(self, query: str, params: Optional[dict] = None) -> pd.DataFrame:
         """
         Execute SQL query and return results as DataFrame
-
+        
         :param query: SQL query string
         :type query: str
-        :param params: Query parameters (dict for named params)
+        :param params: Query parameters
         :type params: Optional[dict]
-        :return: Query results as DataFrame
+        :return: Query results as DF
         :rtype: DataFrame
-
-        Example:
-            >>> db = DatabaseIO()
-            >>> df = db.read_query(
-            ...     "SELECT * FROM customers WHERE tenure > :min_tenure",
-            ...     params={"min_tenure": 5}
-
-            )
         """
         try:
             logger.info(
                 "Executing query",
-                extra={"query_preview": query[:100], "db_type": self.db_type},
+                extra={"db_type": self.db_type, "query_preview": query[:100]},
             )
 
             if self.db_type == "postgres":
                 with self.get_connection() as conn:
-                    if params:
-                        df = pd.read_sql(text(query), conn, params=params)  # type: ignore
-                    else:
-                        df = pd.read_sql(text(query), conn)  # type: ignore
-            else:
-                # DuckDB
+                    sa_conn = cast(Connection, conn)
+                    df = pd.read_sql(text(query), sa_conn, params=params)
+
+            else:  # duckdb
                 if params:
-                    # DuckDB used $1, $2 style parameters
-                    df = self.duckdb_conn.execute(
-                        query, list(params.values())
-                    ).fetchdf()
-                else:
-                    df = self.duckdb_conn.execute(query).fetchdf()
+                    raise ValueError("DuckDB does not support named parameters")
+
+                with self.get_connection() as conn:
+                    duck_conn = cast(duckdb.DuckDBPyConnection, conn)
+                    df = duck_conn.execute(query).fetchdf()
 
             logger.info(
-                "Query completed successfully",
+                "Query completed",
                 extra={"rows_returned": len(df), "columns": len(df.columns)},
             )
-
             return df
 
         except Exception as e:
-            logger.error(
-                "Query execution failed",
-                extra={
-                    "status": "error",
-                    "error_type": type(e).__name__,
-                },
-                exc_info=True,
-            )
+            logger.exception("Query execution failed", 
+                             extra=
+                             {"status": "error", "error_type": type(e).__name__,}, 
+                             exc_info=True
+                             )
             raise
 
+
+    # Execute Statements
+    def execute(self, query: str, params: Optional[dict] = None) -> None:
+        """
+        Execute SQL statements without returning results (DDL, DML)
+        
+        :param query: SQL statement
+        :type query: str
+        :param params: Query parameters
+        :type params: Optional[dict]
+        """
+        try:
+            logger.info("Executing statement", extra={"db_type": self.db_type})
+
+            if self.db_type == "postgres":
+                with self.get_connection() as conn:
+                    sa_conn = cast(Connection, conn)
+                    stmt = cast(Executable, text(query))
+                    sa_conn.execute(stmt, params or {})
+
+            else:  # duckdb
+                if params:
+                    raise ValueError("DuckDB does not support named parameters")
+
+                with self.get_connection() as conn:
+                    duck_conn = cast(duckdb.DuckDBPyConnection, conn)
+                    duck_conn.execute(query)
+
+            logger.info("Statement executed successfully")
+
+        except Exception as e:
+            logger.exception("Statement execution failed", 
+                             extra={"status": "error", "error_type": type(e).__name__, }, 
+                             exc_info=True)
+            raise
+
+
+    # Utilities
     def table_exists(self, table_name: str) -> bool:
         """
-        Check if a table exists in the database
-
-        :param table_name: Table name to check
-        :type table_name: str
-        :return: True if table exists, False otherwise
-        :rtype: bool
+        Check whether a table exists.
         """
         try:
             if self.db_type == "postgres":
                 inspector = inspect(self.engine)
-                exists = table_name in inspector.get_table_names()
+                return table_name in inspector.get_table_names()
             else:
-                result = self.duckdb_conn.execute(
-                    f"SELECT COUNT(*) FROM information_schema.tables WHERE table_name = '{table_name}'"
-                ).fetchone()
-                exists = bool(result and result[0] > 0)
+                with duckdb.connect(str(settings.duckdb_path)) as conn:
+                    result = conn.execute(
+                        "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?",
+                        [table_name],
+                    ).fetchone()
+                    return bool(result and result[0] > 0)
 
-            logger.debug(f"Table '{table_name}' exists: {exists}")
-            return exists
-
-        except Exception as e:
-            logger.error(
-                f"Error checking if table exists: {table_name}",
-                extra={
-                    "status": "error",
-                    "error_type": type(e).__name__,
-                },
-                exc_info=True,
-            )
+        except Exception:
+            logger.exception("Table existence check failed")
             return False
-
-    def _should_commit(self, query: str) -> bool:
-        """Check whether to commit or not"""
-        q = query.strip().lower()
-        return q.startswith(
-            (
-                "insert",
-                "update",
-                "delete",
-                "create",
-                "drop",
-                "alter",
-                "truncate",
-                "with",
-            )
-        )
-
-    def execute(self, query: str, params: Optional[dict] = None) -> None:
-        """
-        Execute SQL statement without returning results (DDL, DML).
-        :param query: SQL statement
-        :type table_name: str
-        :param params: Query parameters
-
-        Example:
-            >>> db = DatabaseIO()
-            >>> db.execute("CREATE INDEX idx_customer_id ON customers(customer_id)")
-        """
-        try:
-            logger.info(f"Executing statement: {query[:100]}...")
-
-            if self.db_type == "postgres":
-                with self.get_connection() as conn:
-                    stmt = text(query)
-                    if params:
-                        conn.execute(stmt, params)  # type: ignore[arg-type]
-                    else:
-                        conn.execute(stmt)  # type: ignore[arg-type]
-                    if self._should_commit(query):
-                        conn.commit()
-            else:
-                if params:
-                    self.duckdb_conn.execute(query, list(params.values()))
-                else:
-                    self.duckdb_conn.execute(query)
-
-            logger.info("Statement executed successfully")
-        except Exception as e:
-            logger.error(
-                "Statement execution failed",
-                extra={
-                    "status": "error",
-                    "error_type": type(e).__name__,
-                },
-                exc_info=True,
-            )
-            raise
-
+   
+    # Cleanup
     def close(self):
-        """Close database connection"""
         if self._engine:
             self._engine.dispose()
             logger.info("PostgreSQL engine disposed")
-
-        if self._duckdb_conn:
-            self._duckdb_conn.close()
-            logger.info("DuckDB connection closed")
