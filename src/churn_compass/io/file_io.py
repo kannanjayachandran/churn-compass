@@ -11,12 +11,11 @@ Features:
 """
 
 from pathlib import Path
-from typing import Optional, Union, List, Literal, Dict
+from typing import Optional, Union, List, Literal
 import pandas as pd
 import duckdb
 
-from churn_compass.config.settings import settings
-from churn_compass.logging.logger import setup_logger
+from churn_compass import settings, setup_logger
 
 
 logger = setup_logger(__name__)
@@ -68,7 +67,7 @@ class FileIO:
                 },
             )
             return df
-        
+
         except Exception as e:
             logger.error(
                 f"Failed to read csv for file: {str(filepath)}",
@@ -155,7 +154,7 @@ class FileIO:
                 },
             )
             return df
-        
+
         except Exception as e:
             logger.error(
                 f"Failed to read Parquet for file: {str(filepath)}",
@@ -217,7 +216,9 @@ class FileIO:
             )
             raise
 
-    def query_with_duckdb(self, sql: str, files: Optional[dict[str, str]] = None) -> pd.DataFrame:
+    def query_with_duckdb(
+        self, sql: str, files: Optional[dict[str, str]] = None
+    ) -> pd.DataFrame:
         """
         Execute SQL query on local files using DuckDB
 
@@ -245,13 +246,13 @@ class FileIO:
                     fp = str(filepath)
                     if fp.endswith(".parquet"):
                         conn.execute(
-                            "CREATE VIEW ? AS SELECT * FROM read_parquet(?)", 
-                            [table_name, fp], 
+                            "CREATE VIEW ? AS SELECT * FROM read_parquet(?)",
+                            [table_name, fp],
                         )
                     elif fp.endswith(".csv"):
                         conn.execute(
-                            "CREATE VIEW ? AS SELECT * FROM read_csv_auto(?)", 
-                            [table_name, fp]
+                            "CREATE VIEW ? AS SELECT * FROM read_csv_auto(?)",
+                            [table_name, fp],
                         )
 
             logger.info(f"Executing DuckDB query: {sql[:100]}...")
@@ -262,7 +263,7 @@ class FileIO:
                 extra={"rows_returned": len(df), "columns": len(df.columns)},
             )
             return df
-        
+
         except Exception as e:
             logger.error(
                 "DuckDB query failed",
@@ -283,7 +284,6 @@ class FileIO:
         Check if path is an S3 URI.
         """
         return str(filepath).startswith(("s3://", "s3a://", "s3n://"))
-    
 
     # S3 placeholders
     def _read_csv_from_s3(self, s3_path: str, **kwargs):
