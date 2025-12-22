@@ -22,16 +22,21 @@ RAW_SCHEMA = DataFrameSchema(
         "HasCrCard": Column(int, checks=Check.isin([0, 1])),
         "IsActiveMember": Column(int, checks=Check.isin([0, 1])),
         "EstimatedSalary": Column(float, checks=[Check.ge(0), Check.le(200_000)]),
+        "CardType": Column(
+            str, checks=Check.isin(["Silver", "Gold", "Diamond", "Platinum"])
+        ),
         "Exited": Column(int, checks=Check.isin([0, 1])),
     },
-    strict=False,   # Allow extra columns (Complain, Satisfaction Score) in raw data
-    coerce=True,    # Attempt type coercion
+    strict=False,  # Allow extra columns (Complain, Satisfaction Score) in raw data
+    coerce=True,  # Attempt type coercion
 )
 
 TRAINING_SCHEMA = DataFrameSchema(
-    columns={k: v for k, v in RAW_SCHEMA.columns.items() if k not in {
-        "RowNumber", "CustomerId", "Surname"
-    }},
-    strict=True,    # Extra columns not allowed
+    columns={
+        k: v
+        for k, v in RAW_SCHEMA.columns.items()
+        if k not in {"RowNumber", "CustomerId", "Surname"}
+    },
+    strict=True,  # Extra columns not allowed
     coerce=True,
 )

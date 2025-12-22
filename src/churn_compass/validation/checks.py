@@ -5,9 +5,10 @@ Checks dataset for class imbalance and duplicate rows
 """
 
 import pandas as pd
-from churn_compass.logging.logger import setup_logger
+from churn_compass import setup_logger
 
 logger = setup_logger(__name__)
+
 
 def check_class_imbalance(
     df: pd.DataFrame,
@@ -16,7 +17,7 @@ def check_class_imbalance(
 ) -> None:
     """
     Check class imbalance
-    
+
     :param df: Input DataFrame
     :type df: pd.DataFrame
     :param min_minority_pct: Minimum percentage for minority class

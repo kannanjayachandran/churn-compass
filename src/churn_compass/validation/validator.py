@@ -5,12 +5,14 @@ Churn Compass - Data validator
 import pandas as pd
 from pandera.pandas import errors
 
-from churn_compass.logging.logger import setup_logger
+from churn_compass import setup_logger
 from .schemas import RAW_SCHEMA, TRAINING_SCHEMA
 from .leakage import detect_leakage_columns
 from .checks import check_class_imbalance, check_data_quality
 
+
 logger = setup_logger(__name__)
+
 
 def validate_raw_data(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -26,7 +28,7 @@ def validate_raw_data(df: pd.DataFrame) -> pd.DataFrame:
         validated = RAW_SCHEMA.validate(df, lazy=True)
         logger.info("Raw validation passed", extra={"rows": len(validated)})
         return validated
-    
+
     except errors.SchemaError:
         logger.exception("Raw data validation failed", exc_info=True)
         raise
