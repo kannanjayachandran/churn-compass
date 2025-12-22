@@ -1,23 +1,19 @@
 """
-Churn Compass - Integrated Synthetic Data Generator
+Churn Compass - Synthetic Data Generator
 
-Generates synthetic data AND processes it through the ingestion pipeline.
+Generates synthetic data and processes it through the ingestion pipeline.
 
 Purpose:
 - Generate synthetic churn dataset for pipeline & UI demonstration.
-- Base: 2,500 rows
-- Drifted: 1,000 rows (Age shift + churn probability increase)
 - Quality evaluation using SDV metrics
 
 Outputs:
-- data/raw/sample.csv (raw synthetic data)
+- data/raw/sample.csv (raw synthetic data, default - 2500 rows)
 - data/processed/sample_reference.parquet (base synthetic, pipeline-processed)
-- data/processed/sample_current_drifted.parquet (drifted synthetic, pipeline-processed)
+- data/processed/sample_current_drifted.parquet (drifted synthetic, pipeline-processed; default 1000 rows) 
 - quality_report.json (SDV quality metrics)
 
 Usage:
-    python synthetic_data_generator.py --input data/raw/real_data.csv --model gaussian_copula
-    python synthetic_data_generator.py --input data/raw/real_data.csv --model copulagan --base-rows 5000
 """
 
 import argparse
@@ -38,63 +34,7 @@ from churn_compass.logging.logger import log_execution_time, setup_logger
 from churn_compass.pipelines.ingest_pipeline import data_ingestion_flow
 
 
-logger = setup_logger("create_sample_data")
-
-
-# CLI arguments
-def parse_arguments():
-    """parse commandline arguments"""
-    parser = argparse.ArgumentParser(
-        description="Generate synthetic churn dataset using SDV + Pipeline",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-                Examples:
-                # Generating data using GaussianCopula
-                python synthetic_data_generator.py --input data/raw/real_data.csv
-
-                # Custom row counts (DO NOT USE THIS DATA FOR TRAINING)
-                python synthetic_data_generator.py --input data/raw/real_data.csv --base-rows 5000 --drift-rows 2000
-
-                # Skip pipeline processing (faster, but doesn't validate!)
-                python synthetic_data_generator.py --input data/raw/real_data.csv --skip-pipeline
-                """,
-    )
-
-    parser.add_argument(
-        "--input",
-        type=str,
-        required=True,
-        help="Path to real dataset CSV for training the synthetic model",
-    )
-
-    parser.add_argument(
-        "--base-rows",
-        type=int,
-        default=2000,
-        help="Number of rows for base synthetic dataset (default: 2000)",
-    )
-
-    parser.add_argument(
-        "--drift-rows",
-        type=int,
-        default=1000,
-        help="Number of rows for drifted synthetic dataset (default: 1000)",
-    )
-
-    parser.add_argument(
-        "--skip-pipeline",
-        action="store_true",
-        help="Skip running synthetic data through ingestion pipeline (Faster but no validation)",
-    )
-
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default=None,
-        help="Output directory (default: uses settings.data_raw_dir and settings.data_processed_dir)",
-    )
-
-    return parser.parse_args()
+logger = setup_logger("Synthetic Data Generator")
 
 
 # Data loading & cleaning
@@ -251,7 +191,7 @@ def apply_drift(df: pd.DataFrame, Original_df: pd.DataFrame) -> pd.DataFrame:
                 f"(+{new_age_mean - original_age_mean:.2f} Years)"
             )
 
-        # churn rate drift: -> 27%
+        # churn rate drift: -> 28%
         if "Exited" in df_drift.columns:
             target_churn = 0.28
             current_churn = df_drift["Exited"].mean()
@@ -273,11 +213,11 @@ def apply_drift(df: pd.DataFrame, Original_df: pd.DataFrame) -> pd.DataFrame:
                 f"(target: {target_churn:.2%})"
             )
 
-        # Minimal drift to other numerical columns
-        drift_cols = ["CreditScore", "Balance", "EstimatedSalary"]
+        # 0.35 drift to other numerical columns
+        drift_cols = ["CreditScore", "Balance", "EstimatedSalary", "Tenure", "NumOfProducts"]
         for col in drift_cols:
             if col in df_drift.columns and pd.api.types.is_numeric_dtype(df_drift[col]):
-                noise = np.random.normal(0, 0.020, len(df_drift))
+                noise = np.random.normal(0, 0.35, len(df_drift))
                 df_drift[col] = df_drift[col] * (1 + noise)
                 df_drift[col] = df_drift[col].clip(
                     lower=Original_df[col].min(), upper=Original_df[col].max()
@@ -390,10 +330,10 @@ def generate_synthetic_data(
         processed_dir.mkdir(parents=True, exist_ok=True)
 
         # Output paths
-        raw_csv_path = raw_dir / "sample.csv"
-        base_parquet_path = processed_dir / "sample_reference.parquet"
-        drift_parquet_path = processed_dir / "sample_current_drifted.parquet"
-        quality_report_path = processed_dir / "quality_report.json"
+        raw_csv_path = raw_dir / "synthetic_raw_sample.csv"
+        base_parquet_path = processed_dir / "synthetic_sample.parquet"
+        drift_parquet_path = processed_dir / "synthetic_sample_drifted.parquet"
+        quality_report_path = processed_dir / "synthetic_quality_report.json"
 
         # Step: 1 - Load data
         real_df = load_and_clean(input_path)
@@ -411,6 +351,7 @@ def generate_synthetic_data(
                 "Age": "gamma",
                 "Balance": "beta",
                 "EstimatedSalary": "beta",
+                "NumOfProducts": "gamma", 
             },
         )
         synthesizer.fit(real_df)
@@ -503,6 +444,61 @@ def generate_synthetic_data(
             exc_info=True,
         )
         raise
+
+# CLI arguments
+def parse_arguments():
+    """parse commandline arguments"""
+    parser = argparse.ArgumentParser(
+        description="Generate synthetic churn dataset using SDV + Pipeline",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+                Examples:
+                # Generating data using GaussianCopula
+                python synthetic_data_generator.py --input data/raw/real_data.csv
+
+                # Custom row counts (DO NOT USE THIS DATA FOR TRAINING)
+                python synthetic_data_generator.py --input data/raw/real_data.csv --base-rows 5000 --drift-rows 2000
+
+                # Skip pipeline processing (faster, but doesn't validate!)
+                python synthetic_data_generator.py --input data/raw/real_data.csv --skip-pipeline
+                """,
+    )
+
+    parser.add_argument(
+        "--input",
+        type=str,
+        required=True,
+        help="Path to real dataset CSV for training the synthetic model",
+    )
+
+    parser.add_argument(
+        "--base-rows",
+        type=int,
+        default=2000,
+        help="Number of rows for base synthetic dataset (default: 2000)",
+    )
+
+    parser.add_argument(
+        "--drift-rows",
+        type=int,
+        default=1000,
+        help="Number of rows for drifted synthetic dataset (default: 1000)",
+    )
+
+    parser.add_argument(
+        "--skip-pipeline",
+        action="store_true",
+        help="Skip running synthetic data through ingestion pipeline (Faster but no validation)",
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Output directory (default: uses settings.data_raw_dir and settings.data_processed_dir)",
+    )
+
+    return parser.parse_args()
 
 
 # CLI
