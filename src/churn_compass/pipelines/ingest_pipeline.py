@@ -16,11 +16,9 @@ from typing import Optional
 import pandas as pd
 from prefect import flow, task
 
-from churn_compass.config.settings import settings
-from churn_compass.logging.logger import setup_logger, log_execution_time
-from churn_compass.io.file_io import FileIO
+from churn_compass import settings, setup_logger, log_execution_time, set_run_context, generate_run_id
+from churn_compass.io import FileIO, DatabaseIO
 from churn_compass.validation import validate_raw_data, detect_leakage_columns
-
 
 
 logger = setup_logger(__name__)
@@ -38,16 +36,29 @@ def extract_raw_data(input_path: str) -> pd.DataFrame:
     :return: Raw DataFrame
     :rtype: DataFrame
     """
-    logger.info("Extracting raw data", 
-                extra={"input_path": input_path})
+    logger.info("Extracting raw data", extra={"input_path": input_path})
 
-    df = file_io.read_csv(input_path)
+    suffix: str = Path(input_path).suffix.lower()
+
+    if suffix == ".parquet":
+        df = file_io.read_parquet(input_path)
+    elif suffix == ".csv":
+        df = file_io.read_csv(input_path)
+    elif suffix == ".sql":
+        db = DatabaseIO()
+        df = db.read_query(input_path)
+    else:
+        raise ValueError(f"Unsupported source type: {suffix}")
 
     logger.info(
-            "Data extraction completed",
-            extra={"rows": len(df), "columns": len(df.columns),},
+        "Data extraction completed",
+        extra={
+            "rows": len(df),
+            "columns": len(df.columns),
+        },
     )
     return df
+
 
 @task(name="validate_raw_data", retries=1)
 @log_execution_time(logger)
@@ -64,11 +75,12 @@ def validate_raw(df: pd.DataFrame) -> pd.DataFrame:
     validated = validate_raw_data(df)
 
     logger.info(
-        "Raw validation passed", 
-        extra={"rows": len(validated), "columns": len(validated.columns)}
+        "Raw validation passed",
+        extra={"rows": len(validated), "columns": len(validated.columns)},
     )
 
     return validated
+
 
 @task(name="clean_data", retries=1)
 @log_execution_time(logger)
@@ -97,20 +109,24 @@ def clean_data(df: pd.DataFrame, drop_nulls: bool = True) -> pd.DataFrame:
     if n_duplicates > 0:
         logger.warning(f"Removing {n_duplicates} duplicate rows")
         df = df.drop_duplicates()
-    
+
     if drop_nulls:
         n_nulls = df.isnull().sum().sum()
         if n_nulls:
             logger.warning("Dropping rows with nulls", extra={"null_cells": n_nulls})
             df = df.dropna()
-
+    
+    # Card Type column normalization
+    df = normalize_card_type(df)
+    
+    
     logger.info(
         "Data cleaning completed",
         extra={
-            "rows_removed": original_rows - len(df), 
+            "rows_removed": original_rows - len(df),
             "columns_removed": original_cols - len(df.columns),
-            },
-        )
+        },
+    )
 
     return df
 
@@ -150,6 +166,42 @@ def load_processed_data(df: pd.DataFrame, output_path: str) -> str:
 
     return str(output_path_obj.resolve())
 
+# utility
+def normalize_card_type(df: pd.DataFrame) -> pd.DataFrame:
+    if "Card Type" not in df.columns:
+        return df
+
+    df = df.rename(columns={"Card Type": "CardType"})
+
+    known_values = {"GOLD", "SILVER", "DIAMOND", "PLATINUM"}
+
+    # Capture unexpected values (for auditability)
+    raw_values = set(df["CardType"].dropna().unique())
+    unexpected = raw_values - known_values
+
+    if unexpected:
+        logger.warning(
+            "Unexpected CardType values found",
+            extra={"unexpected_values": sorted(unexpected)},
+        )
+
+    df["CardType"] = (
+        df["CardType"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .str.capitalize()
+    )
+
+    logger.info(
+        "Normalized CardType column",
+        extra={
+            "distinct_values": sorted(df["CardType"].dropna().unique())
+        },
+    )
+
+    return df
+
 
 @flow(
     name="ingest_customer_data",
@@ -157,8 +209,7 @@ def load_processed_data(df: pd.DataFrame, output_path: str) -> str:
     log_prints=True,
 )
 def data_ingestion_flow(
-    input_path: Optional[str] = None, 
-    output_path: Optional[str] = None
+    input_path: Optional[str] = None, output_path: Optional[str] = None
 ) -> Optional[str]:
     """
     Main ingestion flow: Extract -> Validate -> Clean -> Load
@@ -170,15 +221,16 @@ def data_ingestion_flow(
     :return: Path to processed Parquet file
     :rtype: Optional[str]
     """
+    run_id = generate_run_id("ingestion")
+    set_run_context(run_id, stage="ingestion")
+    
 
     if input_path is None:
-        input_path = str(settings.data_raw_dir / "sample.csv")
+        input_path = str(settings.data_raw_dir / "Customer-Churn-Records.csv")
 
     if output_path is None:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_path = str(
-            settings.data_processed_dir / f"customers_{ts}.parquet"
-        )
+        output_path = str(settings.data_processed_dir / f"customers_{ts}.parquet")
 
     logger.info(
         "Starting ingestion flow",
@@ -190,14 +242,11 @@ def data_ingestion_flow(
     )
 
     # Pipeline
-    df_raw = extract_raw_data(input_path)
+    df_raw = extract_raw_data(input_path, )
     df_valid = validate_raw(df_raw)
     df_clean = clean_data(df_valid)
     result = load_processed_data(df_clean, output_path)
 
-    logger.info(
-        "Ingestion flow completed successfully", extra={"result_path": result}
-    )
+    logger.info("Ingestion flow completed successfully", extra={"result_path": result})
 
     return result
-
