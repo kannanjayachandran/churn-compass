@@ -10,6 +10,7 @@ requires-python = ">=3.13"
 dependencies = [
     "dotenv>=0.9.9",
     "duckdb>=1.4.2",
+    "evidently>=0.7.17",
     "fastapi>=0.123.5",
     "mlflow>=3.6.0",
     "optuna>=4.6.0",
@@ -18,6 +19,7 @@ dependencies = [
     "prefect>=3.6.5",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
+    "python-multipart>=0.0.20",
     "scikit-learn>=1.7.2",
     "sqlalchemy>=2.0.44",
     "uvicorn[standard]>=0.38.0",
