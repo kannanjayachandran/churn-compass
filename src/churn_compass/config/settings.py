@@ -13,7 +13,7 @@ from pydantic import Field, model_validator
 # Project Paths
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = PROJECT_ROOT / "data"
-MLFLOW_DIR = PROJECT_ROOT / "mlflow"
+MLFLOW_DIR = PROJECT_ROOT / "mlruns"
 
 
 class Settings(BaseSettings):
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # Project Metadata
     project_name: str = "churn_compass"
     version: str = "0.1.0"
-    environment: str = Field(default="local")   # local | dev | prod
+    environment: str = Field(default="local")  # local | dev | prod
 
     # Data Paths
     data_raw_dir: Path = DATA_DIR / "raw"
@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     data_processed_dir: Path = DATA_DIR / "processed"
 
     # MLflow
-    mlflow_tracking_uri: str = f"file://{MLFLOW_DIR.resolve()}"
+    mlflow_tracking_uri: str = f"file:{PROJECT_ROOT}/mlruns"
     mlflow_experiment_name: str = "churn_compass"
     mlflow_model_name: str = "churn_compass_xgb"
 
@@ -62,10 +62,20 @@ class Settings(BaseSettings):
     test_size: float = 0.2
     val_size: float = 0.2  # applied to remaining training set
 
+    # Serving
+    prediction_threshold: float = 0.5
+    high_risk_threshold: float = 0.5
+
+    # Monitoring
+    prediction_drift_threshold: float = 0.5
+    monitoring_report_json_output_path: Path = DATA_DIR / "processed"
+    monitoring_report_html_output_path: Path = DATA_DIR / "processed"
+    slack_webhook_url: Optional[str] = None
+    
     @model_validator(mode="after")
     def validate_splits(self):
         """Ensure splits makes sense."""
-        if self.test_size +self.val_size >= 1:
+        if self.test_size + self.val_size >= 1:
             raise ValueError("test_size + val_size must be < 1")
         return self
 
@@ -84,6 +94,10 @@ class Settings(BaseSettings):
     id_columns: list[str] = Field(
         default_factory=lambda: ["RowNumber", "CustomerId", "Surname"]
     )
+    # Some customers who has no products, have points
+    misleading_columns: list[str] = Field(
+        default_factory=lambda: ["Point Earned"]
+    )
 
     # API Configuration
     api_host: str = "0.0.0.0"
@@ -97,14 +111,14 @@ class Settings(BaseSettings):
     # S3 for future production use
     s3_enabled: bool = False
     s3_bucket: str = ""
-    s3_prefix: str = F"churn-compass"
+    s3_prefix: str = "churn-compass"
     aws_region: str = "us-east-1"
 
     # helper functions
     def get_postgres_uri(self) -> str:
         """Generate PostgresSQL connection URI"""
         pw = f":{self.postgres_password}" if self.postgres_password else ""
-        
+
         return (
             f"postgresql://{self.postgres_user}{pw}"
             f"@{self.postgres_host}:{self.postgres_database}"
