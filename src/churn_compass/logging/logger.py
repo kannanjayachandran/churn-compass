@@ -20,18 +20,57 @@ import time
 import functools
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
+from contextvars import ContextVar
 
-from churn_compass.config.settings import settings
+from churn_compass.config import settings
 
-# Track configured loggers to avoid duplicate handlers
-_configured_loggers = set()
+# Context (pipeline-level metadata)
+_run_id_ctx: ContextVar[Optional[str]] = ContextVar("run_id", default=None)
+_stage_ctx: ContextVar[Optional[str]] = ContextVar("stage", default=None)
+
+
+def set_run_context(run_id: Optional[str] = None, stage: Optional[str] = None) -> None:
+    _run_id_ctx.set(run_id)
+    if stage is not None:
+        _stage_ctx.set(stage)
+
+
+def clear_run_context() -> None:
+    _run_id_ctx.set(None)
+    _stage_ctx.set(None)
+
+
+# Internal constants
+_STANDARD_LOGRECORD_ATTRS = {
+    "name",
+    "msg",
+    "args",
+    "levelname",
+    "levelno",
+    "pathname",
+    "filename",
+    "module",
+    "exc_info",
+    "exc_text",
+    "stack_info",
+    "lineno",
+    "funcName",
+    "created",
+    "msecs",
+    "relativeCreated",
+    "thread",
+    "threadName",
+    "processName",
+    "process",
+}
+
+_configured_loggers: set[str] = set()
 
 
 # Formatters
 class JSONFormatter(logging.Formatter):
     """
-    Custom JSON formatter for structured logging
-    Output logs in JSON format with timestamp, level, message, and context.
+    Custom JSON formatter for structured logging.
     """
 
     def __init__(self, include_extra: bool = True):
@@ -39,7 +78,6 @@ class JSONFormatter(logging.Formatter):
         self.include_extra = include_extra
 
     def _safe_serialize(self, obj: Any) -> Any:
-        """Avoid breaking JSON logging if objects are not serializable"""
         try:
             json.dumps(obj)
             return obj
@@ -47,9 +85,10 @@ class JSONFormatter(logging.Formatter):
             return str(obj)
 
     def format(self, record: logging.LogRecord) -> str:
-        """Format log record as JSON string"""
-        log_data = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+        log_data: Dict[str, Any] = {
+            "timestamp": datetime.fromtimestamp(
+                record.created, tz=timezone.utc
+            ).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -58,27 +97,34 @@ class JSONFormatter(logging.Formatter):
             "line": record.lineno,
         }
 
-        # Exception info
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)
 
-        # Extra context fields
+        # Attach implicit context
+        run_id = _run_id_ctx.get()
+        stage = _stage_ctx.get()
+
+        if run_id:
+            log_data["run_id"] = run_id
+        if stage:
+            log_data["stage"] = stage
+
         if self.include_extra:
             extra_keys = {
                 k: v
                 for k, v in record.__dict__.items()
-                if k not in logging.LogRecord("", 0, "", 0, "", (), None).__dict__
+                if k not in _STANDARD_LOGRECORD_ATTRS and not k.startswith("_")
             }
 
             if extra_keys:
-                extra_keys = {k: self._safe_serialize(v) for k, v in extra_keys.items()}
-                log_data["context"] = mask_pii(extra_keys)
+                safe_extra = {k: self._safe_serialize(v) for k, v in extra_keys.items()}
+                log_data["context"] = mask_pii(safe_extra)
 
         return json.dumps(log_data)
 
 
 class TextFormatter(logging.Formatter):
-    """Standard text formatter for human-readable console output"""
+    """Human-readable formatter for console output."""
 
     def __init__(self):
         super().__init__(
@@ -89,18 +135,8 @@ class TextFormatter(logging.Formatter):
 
 # PII masking
 def mask_pii(
-    data: Dict[str, Any], fields_to_mask: Optional[list] = None
+    data: Dict[str, Any], fields_to_mask: Optional[list[str]] = None
 ) -> Dict[str, Any]:
-    """
-    Mask PII fields in dictionaries before logging.
-
-    Args:
-        data: Dictionary potentially containing PII
-        fields_to_mask: List of field names to mask (default: common PII fields)
-
-    Returns:
-        Dictionary with masked fields
-    """
     if fields_to_mask is None:
         fields_to_mask = [
             "customerid",
@@ -118,113 +154,78 @@ def mask_pii(
 
     for field in fields_to_mask:
         if field.lower() in lower_keys:
-            k = lower_keys[field.lower()]
-            v = str(masked[k])
-            masked[k] = f"***{v[-4]}" if len(v) > 4 else "***"
+            key = lower_keys[field.lower()]
+            value = str(masked[key])
+            masked[key] = f"***{value[-4:]}" if len(value) > 4 else "***"
 
     return masked
 
 
+# Logger setup
 def setup_logger(
     name: str,
     level: Optional[str] = None,
     log_to_file: bool = True,
     log_to_console: bool = True,
 ) -> logging.Logger:
-    """
-    Set up a logger with JSON and/or text formatting
-
-    :param name: Logger name (usually __name__ of calling module)
-    :type name: str
-    :param level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-    :type level: Optional[str]
-    :param log_to_file: Whether to log to file
-    :type log_to_file: bool
-    :param log_to_console: Whether to log to console
-    :type log_to_console: bool
-    :return: Returns a logging.Logger object
-    """
     logger = logging.getLogger(name)
 
-    # if handler already added, return logger immediately
-    if name in _configured_loggers:
-        return logger
-
-    # resolve level (log_level is guaranteed to be a string here)
     log_level_str = level or settings.log_level
-
-    # int representation of log level
     log_level_int = getattr(logging, log_level_str.upper())
     logger.setLevel(log_level_int)
 
-    # console handler
-    if log_to_console:
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(log_level_int)
+    if name not in _configured_loggers:
+        if log_to_console:
+            console_handler = logging.StreamHandler(sys.stdout)
+            console_handler.setLevel(log_level_int)
+            console_handler.setFormatter(
+                JSONFormatter() if settings.log_format == "json" else TextFormatter()
+            )
+            logger.addHandler(console_handler)
 
-        console_handler.setFormatter(
-            JSONFormatter() if settings.log_format == "json" else TextFormatter()
-        )
-        logger.addHandler(console_handler)
+        if log_to_file and settings.log_file:
+            settings.log_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # File handler
-    if log_to_file and settings.log_file:
-        settings.log_file.parent.mkdir(parents=True, exist_ok=True)
+            file_handler = logging.handlers.RotatingFileHandler(
+                settings.log_file,
+                maxBytes=10 * 1024 * 1024,
+                backupCount=5,
+                encoding="utf-8",
+            )
+            file_handler.setLevel(logging.DEBUG)
+            file_handler.setFormatter(JSONFormatter(include_extra=True))
+            logger.addHandler(file_handler)
 
-        # Rotating file handler (10MB per file, keep 5 backups)
-        file_handler = logging.handlers.RotatingFileHandler(
-            settings.log_file,
-            maxBytes=10 * 1024 * 1024,
-            backupCount=5,
-            encoding="utf-8",
-        )
-        file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(JSONFormatter())
-        logger.addHandler(file_handler)
-    # Prevent propagation to root logger
-    logger.propagate = False
-
-    # Mark as configured
-    _configured_loggers.add(name)
+        logger.propagate = False
+        _configured_loggers.add(name)
 
     return logger
 
 
+# Execution time decorator
 def log_execution_time(logger: logging.Logger):
-    """
-    Decorator to log function execution time
-
-    Usage:
-        @log_execution_time(logger)
-        def my_function():
-            pass
-    """
-
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             start_time = time.time()
             try:
                 result = func(*args, **kwargs)
-                execution_time = time.time() - start_time
+                duration = time.time() - start_time
                 logger.info(
-                    f"Function {func.__name__} completed",
+                    "Function completed",
                     extra={
-                        "execution_time_seconds": round(execution_time, 3),
+                        "execution_time_seconds": round(duration, 3),
                         "status": "success",
                     },
                 )
                 return result
-            except Exception as e:
-                execution_time = time.time() - start_time
+            except Exception:
+                duration = time.time() - start_time
                 logger.error(
-                    f"Function {func.__name__} failed",
+                    "Function failed",
                     extra={
-                        "function": func.__name__,
-                        "execution_time_seconds": round(execution_time, 3),
+                        "execution_time_seconds": round(duration, 3),
                         "status": "error",
-                        "error_type": type(e).__name__,
-                        "error_message": str(e),
                     },
                     exc_info=True,
                 )
@@ -235,5 +236,5 @@ def log_execution_time(logger: logging.Logger):
     return decorator
 
 
-# Create default logger for the package
+# Default package logger
 default_logger = setup_logger("churn_compass")
