@@ -24,6 +24,7 @@ build/
 data/processed/
 data/interim/
 data/raw/
+data/scored
 
 # Model artifacts, experiments & logs
 models/
