@@ -18,15 +18,15 @@ Churn Compass predicts **which customers are most likely to churn**, enabling ta
 
 | Feature | Description |
 |--------|------------|
-| **XGBoost Model** | Tuned and optimized for tabular classification |
-| **Optuna Search** | Automated hyperparameter optimization |
-| **MLflow Registry** | Model registration, lineage, and experiment tracking |
-| **Prefect Workflows** | Ingestion, training, monitoring, retraining |
-| **FastAPI Serving** | Real-time scoring + batch scoring APIs |
-| **Evidently** | Drift detection, monitoring reports |
-| **React UI** | Dashboard for predictions, SHAP, drift (coming soon) |
-| **DuckDB + Postgres** | Local development + production RDBMS |
-| **Synthetic Test Data (SDV)** | Demo and testing without real PII |
+| **XGBoost Model**             | Tuned and optimized for tabular classification       |
+| **Optuna Search**             | Automated hyperparameter optimization                |
+| **MLflow Registry**           | Model registration, lineage, and experiment tracking |
+| **Prefect Workflows**         | Ingestion, training, monitoring, retraining          |
+| **FastAPI Serving**           | Real-time scoring + batch scoring APIs               |
+| **Evidently**                 | Drift detection, monitoring reports                  |
+| **React UI**                  | Dashboard for predictions, SHAP, drift               |
+| **DuckDB + Postgres**         | Local development + production RDBMS                 |
+| **Synthetic Test Data (SDV)** | Demo and testing without real PII                    |
 
 ---
 
