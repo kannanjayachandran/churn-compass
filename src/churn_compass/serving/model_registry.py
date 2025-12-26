@@ -81,6 +81,16 @@ class ModelRegistry:
                 )
             
             model: Pipeline = loaded
+            
+            # Fetch run details for metrics
+            metrics = {}
+            params = {}
+            try:
+                run = client.get_run(model_version.run_id)
+                metrics = run.data.metrics
+                params = run.data.params
+            except Exception:
+                logger.warning(f"Failed to fetch run details for {model_version.run_id}")
 
             self._model_cache[cache_key] = model
             self._metadata_cache[cache_key] = {
@@ -88,7 +98,9 @@ class ModelRegistry:
                 "stage": stage, 
                 "version": model_version.version, 
                 "run_id": model_version.run_id, 
-                "creation_timestamp": model_version.creation_timestamp, 
+                "creation_timestamp": model_version.creation_timestamp,
+                "metrics": metrics,
+                "params": params, 
             }
 
             logger.info(
