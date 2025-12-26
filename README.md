@@ -35,34 +35,40 @@ Churn Compass predicts **which customers are most likely to churn**, enabling ta
 ```
 
 churn-compass/
+├── assets/             # Project assets and images
 ├── data/
 │   ├── raw/            # Ingested CSV / external data
 │   ├── interim/        # Preprocessed artifacts
-│   └── processed/      # Feature-ready datasets
+│   ├── processed/      # Feature-ready datasets
+│   └── scored/         # Model prediction outputs
 │
 ├── src/churn_compass/
-│   ├── config/         # Settings + environment management
-│   ├── logging/        # Structured logging (JSON + rotation)
-│   ├── io/             # File + DB layers (Parquet, CSV, DuckDB, Postgres)
-│   ├── validation/     # Pandera schemas + business rule checks
-│   ├── pipelines/      # Prefect ingestion/training flows
-│   ├── modeling/       # Training, optimization, evaluation
-│   ├── serving/        # Batch scoring and prediction utilities
 │   ├── api/            # FastAPI app + routers
-│   └── monitoring/     # Drift detection + reports
+│   ├── config/         # Settings + environment management
+│   ├── features/       # Feature engineering and transformations
+│   ├── io/             # File + DB layers (Parquet, CSV, DuckDB, Postgres)
+│   ├── logging/        # Structured logging (JSON + rotation)
+│   ├── modeling/       # Training, optimization, evaluation
+│   ├── monitoring/     # Drift detection + reports
+│   ├── orchestration/  # Prefect workflow management
+│   ├── pipelines/      # Ingestion and training flows
+│   ├── serving/        # Batch scoring and prediction utilities
+│   └── validation/     # Pandera schemas + business rule checks
 │
+├── frontend/           # UI (React + Vite)
+├── notebooks/          # Exploration and analysis notebooks
 ├── scripts/            # Helper scripts (e.g., sample data generator)
-├── mlflow/             # Local experiment store
-├── logs/               # JSON logs
-├── docker/             # Container deployment
-├── docs/               # Documentation
-├── assets/             # Readme assets
-├── frontend/           # UI (React)
-├── .env.example
-├── README.md
-└── setup.sh
+├── tests/              # Comprehensive test suite (unit + integration)
+├── docker/             # Container deployment configurations
+├── docs/               # Project documentation
+├── logs/               # Application logs
+├── mlruns/             # MLflow experiment tracking store
+├── pyproject.toml      # Build system and dependencies (uv)
+├── .env                # Local environment variables
+├── README.md           # Project documentation
+└── setup.sh            # Initialization script
 
-````
+```
 
 ---
 
@@ -138,11 +144,24 @@ python -m churn_compass.monitoring.check_drift \
 
 ---
 
+## 📊 React UI Dashboard
+
+Start frontend:
+
+```bash
+cd frontend
+bun install
+bun run dev
+```
+
+Open `http://localhost:5173` in your browser.
+
+---
+
 ## 🧪 Testing & Code Quality
 
 ```bash
 pytest -v
-black src/ tests/
 ruff check src/
 mypy src/
 ```
@@ -165,14 +184,6 @@ mypy src/
 * Environment-based secrets
 * DuckDB for local dev — Postgres for production
 * Synthetic dataset support to avoid real customer exposure
-
----
-
-## 🤝 Road Ahead
-
-* Dashboard UX improvements
-* Drift monitoring enhancements
-* Additional model explainability tools
 
 ---
 
