@@ -287,11 +287,11 @@ def main():
             experiment_name=args.experiment
         )
 
-        print(f"✅ Training completed. Final run ID: {results['final_run_id']}")
+        print(f"Training completed. Final run ID: {results['final_run_id']}")
 
     except Exception as e:
         logger.error("Training flow failed", exc_info=True)
-        print(f"❌ Training failed: {str(e)}") 
+        print(f"Training failed: {str(e)}") 
 
 if __name__ == "__main__":
     main()
