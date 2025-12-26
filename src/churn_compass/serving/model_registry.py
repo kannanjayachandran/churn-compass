@@ -86,9 +86,10 @@ class ModelRegistry:
             metrics = {}
             params = {}
             try:
-                run = client.get_run(model_version.run_id)
-                metrics = run.data.metrics
-                params = run.data.params
+                if model_version.run_id is not None:
+                    run = client.get_run(model_version.run_id)
+                    metrics = run.data.metrics
+                    params = run.data.params
             except Exception:
                 logger.warning(f"Failed to fetch run details for {model_version.run_id}")
 
