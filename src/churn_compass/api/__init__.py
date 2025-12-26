@@ -1,4 +1,4 @@
-from .schemas import CustomerInput, PredictionResponse, BatchPredictionRequest, BatchPredictionResponse, FeatureContribution, SHAPExplanation, ExplanationResponse, TopKRequest, TopKResponse, HealthResponse, VersionResponse, ErrorResponse
+from .schemas import CustomerInput, PredictionResponse, BatchPredictionRequest, BatchPredictionResponse, FeatureContribution, SHAPExplanation, ExplanationResponse, TopKRequest, TopKResponse, HealthResponse, VersionResponse, ErrorResponse, SystemStatusResponse
 
 
 __all__ = [
@@ -14,4 +14,5 @@ __all__ = [
     "HealthResponse",
     "VersionResponse",
     "ErrorResponse",
+    "SystemStatusResponse",
 ]
