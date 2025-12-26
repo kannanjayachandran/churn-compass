@@ -163,17 +163,30 @@ class ChurnPredictor:
                 reverse=True, 
             )[:top_n]
 
+            base_value = self._explainer.expected_value
+            if isinstance(base_value, (list, np.ndarray)):
+                # If shap_values was a list (multi-class), we took index 1.
+                # transform expected_value similarly if needed.
+                # Assuming binary classification where we care about the positive class (index 1)
+                if len(base_value) > 1:
+                    base_value = base_value[1]
+                else:
+                    base_value = base_value[0]
+
             return {
                 **prediction, 
-                "explanation": [
-                    {
-                        "feature": f,
-                        "contribution": float(v), 
-                        "impact": "increases" if v > 0 else "decreases",  
-
-                    }
-                    for f, v in importance
-                ],
+                "explanation": {
+                    "top_features": [
+                        {
+                            "feature": f,
+                            "contribution": float(v), 
+                            "impact": "increase" if v > 0 else "decrease",  
+                        }
+                        for f, v in importance
+                    ],
+                    "base_value": float(base_value),
+                    "prediction_value": float(base_value + sum(contributions)),
+                }
             }
         
         except Exception as e:
