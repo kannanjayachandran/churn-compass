@@ -55,7 +55,7 @@ class PredictionResponse(BaseModel):
 class BatchPredictionRequest(BaseModel):
     """Batch prediction request."""
 
-    customers: List[CustomerInput] = Field(min_length=1, max_length=1000)
+    customers: List[CustomerInput] = Field(min_length=1, max_length=20000)
     include_features: bool = False
 
 
@@ -112,6 +112,12 @@ class VersionResponse(BaseModel):
     model_version: Optional[str] = None
     model_stage: Optional[str] = None
     mlflow_tracking_uri: str
+
+
+class SystemStatusResponse(HealthResponse):
+    metrics: Dict[str, float]
+    params: Dict[str, Any]
+    system_info: Dict[str, Any]
 
 
 class ErrorResponse(BaseModel):
