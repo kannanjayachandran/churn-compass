@@ -21,7 +21,9 @@ from churn_compass.api import (
     ErrorResponse,
     TopKRequest,
     TopKResponse,
+    SystemStatusResponse,
 )
+import psutil
 
 logger = setup_logger(__name__)
 
@@ -184,6 +186,11 @@ async def predict_csv(
         df = pd.read_csv(io.BytesIO(contents))
 
         required_cols = list(CustomerInput.model_fields.keys())
+        
+        # Handle common column name mismatches from raw data
+        if "Card Type" in df.columns:
+            df.rename(columns={"Card Type": "CardType"}, inplace=True)
+            
         missing = set(required_cols) - set(df.columns)
         if missing:
             raise HTTPException(
@@ -236,7 +243,39 @@ async def top_k(
             k=len(top_k_df),
             k_percent=len(top_k_df) / len(df), 
         )
-    
     except Exception:
-        logger.exception("Top-K failed")
+        logger.exception("Top-k computation failed")
         raise HTTPException(status_code=500, detail="Top-k computation failed")
+    
+
+
+@app.get("/system/status", response_model=SystemStatusResponse, tags=["Health"])
+async def system_status(request: Request):
+    # 1. Base Health
+    predictor_loaded = request.app.state.predictor is not None
+    
+    # 2. Metadata & Metrics
+    loader = get_model_registry()
+    cache_key = f"{settings.mlflow_model_name}_Production"
+    metadata = loader.get_metadata(cache_key) or {}
+
+    # 3. System Info (Basic)
+    sys_info = {
+        "platform": psutil.os.name if hasattr(psutil, "os") else "linux", # fallback
+        "cpu_percent": psutil.cpu_percent(),
+        "memory_total_gb": round(psutil.virtual_memory().total / (1024**3), 2),
+        "memory_available_gb": round(psutil.virtual_memory().available / (1024**3), 2),
+    }
+    # refine platform info
+    import platform
+    sys_info["platform"] = platform.platform()
+
+    return SystemStatusResponse(
+        status="healthy" if predictor_loaded else "unhealthy",
+        model_loaded=predictor_loaded,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        version=__version__,
+        metrics=metadata.get("metrics", {}),
+        params=metadata.get("params", {}),
+        system_info=sys_info,
+    )
