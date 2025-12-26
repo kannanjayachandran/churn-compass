@@ -62,6 +62,21 @@ def detect_prediction_drift(reference_df: pd.DataFrame, current_df: pd.DataFrame
 @task(retries=1)
 @log_execution_time(logger)
 def detect_performance_drift(reference_df: pd.DataFrame, current_df: pd.DataFrame) -> Dict:
+    required_cols = {"Exited", "probability"}
+
+    if not required_cols.issubset(reference_df.columns):
+        logger.warning(
+            "Skipping performance drift: reference data missing required columns", 
+            extra={"missing": list(required_cols - set(reference_df.columns))}
+        )
+        return {"performance_degraded": False, "skipped": True}
+    
+    if not required_cols.issubset(current_df.columns):
+        logger.warning(
+            "Skipping performance drift: current data missing required columns",
+            extra={"missing": list(required_cols - set(current_df.columns))}
+        )
+        return {"performance_degraded": False, "skipped": True}
     detector = DriftDetector(reference_df)
     return detector.detect_performance_drift(reference_df, current_df)
 
@@ -150,16 +165,20 @@ def monitoring_flow(
     data_drift = detect_data_drift(ref_df, curr_df)
     prediction_drift = detect_prediction_drift(ref_df, curr_df)
 
-    performance_drift = None
-    if (check_performance and "Exited" in curr_df.columns and "probability" in curr_df.columns):
-        performance_drift = detect_performance_drift(ref_df, curr_df)
+    performance_drift = (
+        detect_performance_drift(ref_df, curr_df)
+        if check_performance
+        and {"Exited", "probability"}.issubset(ref_df.columns)
+        and {"Exited", "probability"}.issubset(curr_df.columns)
+        else None
+    )
 
     alerts = generate_alerts(data_drift, prediction_drift, performance_drift)
 
     summary = create_monitoring_summary(data_drift, prediction_drift, performance_drift, alerts)
 
     create_markdown_artifact(
-        key="monitoring_report", 
+        key="monitoring-report", 
         markdown=summary, 
         description="Drift and performance monitoring report", 
     )
