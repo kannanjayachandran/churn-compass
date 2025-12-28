@@ -5,10 +5,10 @@ Handles single and batch predictions with optional SHAP explanations.
 """
 
 from typing import Dict, List, Optional, Union, Any
+import re
 
 import numpy as np
 import pandas as pd
-import shap
 from sklearn.pipeline import Pipeline
 
 from churn_compass import settings, setup_logger
@@ -74,7 +74,7 @@ class ChurnPredictor:
             {
             "probability": probas, 
             "prediction": (probas >= threshold).astype(int), 
-            "risk_level": [self._get_risk_level(p) for p in probas],
+            "risk_level": self._vectorized_risk_level(probas),
             }
         )
     
@@ -155,7 +155,7 @@ class ChurnPredictor:
                 shap_values = shap_values[1]
             
             contributions = shap_values[0]
-            feature_names = self._get_feature_names(X.shape[1])
+            feature_names = self._get_feature_names(X.shape[1], input_features=df.columns.tolist())
 
             importance = sorted(
                 zip(feature_names, contributions), 
@@ -178,7 +178,7 @@ class ChurnPredictor:
                 "explanation": {
                     "top_features": [
                         {
-                            "feature": f,
+                            "feature": self._sanitize_feature_name(f),
                             "contribution": float(v), 
                             "impact": "increase" if v > 0 else "decrease",  
                         }
@@ -195,7 +195,8 @@ class ChurnPredictor:
         
     def _initialize_explainer(self) -> None:
         """Docstring for _initialize_explainer"""
-        logger.info("Initialize SHAP explainer")
+        logger.info("Initialize SHAP explainer (Lazy Load)")
+        import shap
 
         if hasattr(self.model, "named_steps") and "model" in self.model.named_steps:
             self._explainer = shap.TreeExplainer(
@@ -210,14 +211,47 @@ class ChurnPredictor:
         
         return df.values
     
-    def _get_feature_names(self, n_features: int) -> List[str]:
+    def _get_feature_names(self, n_features: int, input_features: Optional[List[str]] = None) -> List[str]:
         try:
             preprocessing = self.model.named_steps["preprocessing"]
-            return preprocessing.get_feature_names_out().tolist()
+            # Try standard scikit-learn API first
+            return preprocessing.get_feature_names_out(input_features).tolist()
         except Exception:
-            return [f"feature_{i}" for i in range(n_features)]
+            try:
+                # Fallback to our custom extractor which is more robust to nested pipelines
+                from churn_compass.features.feature_engineering_pipeline import extract_feature_names
+                return extract_feature_names(preprocessing)
+            except Exception:
+                logger.warning("All feature name extraction methods failed, using generic names")
+                return [f"feature_{i}" for i in range(n_features)]
         
     # Utilities
+    @staticmethod
+    def _sanitize_feature_name(name: str) -> str:
+        """Sanitize feature names for display"""
+        # Strip internal prefixes
+        for prefix in ["num__", "cat__", "m__"]:
+            if name.startswith(prefix):
+                name = name[len(prefix):]
+                break
+        
+        # Replace underscores with spaces
+        name = name.replace("_", " ")
+        
+        # Split PascalCase/CamelCase (e.g., NumOfProducts -> Num Of Products)
+        name = re.sub(r'([a-z])([A-Z])', r'\1 \2', name)
+        
+        # Final formatting: Title Case and strip extra spaces
+        return name.title().strip()
+
+    @staticmethod
+    def _vectorized_risk_level(probabilities: np.ndarray) -> np.ndarray:
+        return np.select(
+            [probabilities >= 0.7, probabilities >= 0.4],
+            ["high", "medium"],
+            default="low"
+        )
+
     @staticmethod
     def _get_risk_level(probability: float) -> str:
         if probability >= 0.7:
