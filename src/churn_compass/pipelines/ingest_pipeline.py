@@ -116,10 +116,6 @@ def clean_data(df: pd.DataFrame, drop_nulls: bool = True) -> pd.DataFrame:
             logger.warning("Dropping rows with nulls", extra={"null_cells": n_nulls})
             df = df.dropna()
     
-    # Card Type column normalization
-    df = normalize_card_type(df)
-    
-    
     logger.info(
         "Data cleaning completed",
         extra={
@@ -166,41 +162,15 @@ def load_processed_data(df: pd.DataFrame, output_path: str) -> str:
 
     return str(output_path_obj.resolve())
 
+from churn_compass.utils.normalization import normalize_dataframe
+
 # utility
 def normalize_card_type(df: pd.DataFrame) -> pd.DataFrame:
-    if "Card Type" not in df.columns:
-        return df
-
-    df = df.rename(columns={"Card Type": "CardType"})
-
-    known_values = {"GOLD", "SILVER", "DIAMOND", "PLATINUM"}
-
-    # Capture unexpected values (for auditability)
-    raw_values = set(df["CardType"].dropna().unique())
-    unexpected = raw_values - known_values
-
-    if unexpected:
-        logger.warning(
-            "Unexpected CardType values found",
-            extra={"unexpected_values": sorted(unexpected)},
-        )
-
-    df["CardType"] = (
-        df["CardType"]
-        .astype(str)
-        .str.strip()
-        .str.lower()
-        .str.capitalize()
+    """Normalize CardType column and handle mapping from Card Type"""
+    return normalize_dataframe(
+        df, 
+        column_mapping={"Card Type": "CardType"}
     )
-
-    logger.info(
-        "Normalized CardType column",
-        extra={
-            "distinct_values": sorted(df["CardType"].dropna().unique())
-        },
-    )
-
-    return df
 
 
 @flow(
@@ -223,6 +193,7 @@ def data_ingestion_flow(
     """
     run_id = generate_run_id("ingestion")
     set_run_context(run_id, stage="ingestion")
+    settings.setup()
     
 
     if input_path is None:
@@ -242,8 +213,9 @@ def data_ingestion_flow(
     )
 
     # Pipeline
-    df_raw = extract_raw_data(input_path, )
-    df_valid = validate_raw(df_raw)
+    df_raw = extract_raw_data(input_path)
+    df_normalized = normalize_card_type(df_raw)
+    df_valid = validate_raw(df_normalized)
     df_clean = clean_data(df_valid)
     result = load_processed_data(df_clean, output_path)
 
