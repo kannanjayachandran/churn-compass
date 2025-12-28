@@ -222,6 +222,7 @@ def train_and_evaluate(
     :rtype: Dict[Any, Any]
     """
 
+    settings.setup()
     mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
     mlflow.set_experiment(experiment_name or settings.mlflow_experiment_name)
 
