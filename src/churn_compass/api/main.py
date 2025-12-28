@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
-from typing import Optional
+import platform as pf
 
 import io
 import pandas as pd
@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from churn_compass import __version__, settings, setup_logger
+from churn_compass.utils.normalization import normalize_dataframe
 from churn_compass.serving import get_model_registry, ChurnPredictor
 from churn_compass.api import (
     CustomerInput, 
@@ -32,6 +33,7 @@ logger = setup_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting Churn Compass API")
+    settings.setup()
 
     try:
         loader = get_model_registry()
@@ -101,7 +103,7 @@ async def health_check(request: Request):
 @app.get("/version", response_model=VersionResponse, tags=["Health"])
 async def get_version():
     loader = get_model_registry()
-    cache_key = f"{settings.mlflow_model_name}_Production"
+    cache_key = f"{settings.mlflow_model_name}:Production"
     metadata = loader.get_metadata(cache_key)
 
     return VersionResponse(
@@ -183,33 +185,42 @@ async def predict_csv(
 ):
     try:
         contents = await file.read()
-        df = pd.read_csv(io.BytesIO(contents))
-
+        buffer = io.BytesIO(contents)
+        
         required_cols = list(CustomerInput.model_fields.keys())
-        
-        # Handle common column name mismatches from raw data
-        if "Card Type" in df.columns:
-            df.rename(columns={"Card Type": "CardType"}, inplace=True)
-            
-        missing = set(required_cols) - set(df.columns)
-        if missing:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Missing required columns: {sorted(missing)}", 
-            )
-        
-        df = df[required_cols]
-        results_df = predictor.predict_batch(df, include_features=True)
 
-        output = io.StringIO()
-        results_df.to_csv(output, index=False)
-        output.seek(0)
+        def generate_predictions():
+            header_written = False
+            try:
+                # Process in chunks of 2000 for a balance between overhead and memory
+                for chunk in pd.read_csv(buffer, chunksize=2000):
+                    # Centralized normalization
+                    chunk = normalize_dataframe(
+                        chunk, 
+                        column_mapping={"Card Type": "CardType"}
+                    )
+                        
+                    missing = set(required_cols) - set(chunk.columns)
+                    if missing:
+                        logger.error(f"Missing columns in CSV chunk: {missing}")
+                        yield f"Error: Missing required columns: {sorted(missing)}\n"
+                        return
+
+                    results_df = predictor.predict_batch(chunk[required_cols], include_features=True)
+                    
+                    output = io.StringIO()
+                    results_df.to_csv(output, index=False, header=not header_written)
+                    header_written = True
+                    yield output.getvalue()
+            except Exception as e:
+                logger.exception("Error during chunked CSV processing")
+                yield f"Error during processing: {str(e)}\n"
 
         return StreamingResponse(
-            iter([output.getvalue()]), 
+            generate_predictions(), 
             media_type="text/csv", 
             headers={
-                "content-Disposition": f"attachment; filename=predictions_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
+                "Content-Disposition": f"attachment; filename=predictions_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
             },
         )
     except HTTPException:
@@ -256,19 +267,16 @@ async def system_status(request: Request):
     
     # 2. Metadata & Metrics
     loader = get_model_registry()
-    cache_key = f"{settings.mlflow_model_name}_Production"
+    cache_key = f"{settings.mlflow_model_name}:Production"
     metadata = loader.get_metadata(cache_key) or {}
 
     # 3. System Info (Basic)
     sys_info = {
-        "platform": psutil.os.name if hasattr(psutil, "os") else "linux", # fallback
+        "platform": pf.system(), 
         "cpu_percent": psutil.cpu_percent(),
         "memory_total_gb": round(psutil.virtual_memory().total / (1024**3), 2),
         "memory_available_gb": round(psutil.virtual_memory().available / (1024**3), 2),
     }
-    # refine platform info
-    import platform
-    sys_info["platform"] = platform.platform()
 
     return SystemStatusResponse(
         status="healthy" if predictor_loaded else "unhealthy",
