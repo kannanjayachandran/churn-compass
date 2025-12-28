@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional, Union, List, Literal
 import pandas as pd
 import duckdb
+import psutil
 
 from churn_compass import settings, setup_logger
 
@@ -38,24 +39,31 @@ class FileIO:
         self.s3_prefix = settings.s3_prefix
 
     # CSV
-    def read_csv(self, filepath: Union[str, Path], **kwargs) -> pd.DataFrame:
+    def read_csv(self, filepath: Union[str, Path], chunk_size: Optional[int] = None, **kwargs) -> Union[pd.DataFrame, pd.io.parsers.TextFileReader]:
         """
         Read CSV file from local filesystem or S3.
 
         :param filepath: Path to CSV file
         :type filepath: Union[str, Path]
+        :param chunk_size: Number of rows per chunk (None for all at once)
+        :type chunk_size: Optional[int]
         :param **kwargs: Additional arguments passed to pd.read_csv
-        :return: Dataframe with loaded data
-        :rtype: DataFrame
+        :return: Dataframe or TextFileReader for chunked reading
+        :rtype: Union[DataFrame, TextFileReader]
         """
         filepath = Path(filepath)
 
         try:
             if self._is_s3_path(filepath):
-                df = self._read_csv_from_s3(str(filepath), **kwargs)
-            else:
-                logger.info("Reading CSV from local", extra={"filepath": str(filepath)})
-                df = pd.read_csv(filepath, **kwargs)
+                # Placeholder for S3 chunked reading if needed
+                return self._read_csv_from_s3(str(filepath), chunksize=chunk_size, **kwargs)
+            
+            logger.info("Reading CSV from local", extra={"filepath": str(filepath), "chunk_size": chunk_size})
+            
+            if chunk_size:
+                return pd.read_csv(filepath, chunksize=chunk_size, **kwargs)
+            
+            df = pd.read_csv(filepath, **kwargs)
 
             logger.info(
                 "Loaded CSV successfully",
@@ -64,6 +72,7 @@ class FileIO:
                     "rows": len(df),
                     "columns": len(df.columns),
                     "memory_mb": round(df.memory_usage(deep=True).sum() / 1024**2, 2),
+                    "system_memory_available_gb": round(psutil.virtual_memory().available / 1024**3, 2),
                 },
             )
             return df
@@ -118,7 +127,7 @@ class FileIO:
 
     # Parquet
     def read_parquet(
-        self, filepath: Union[str, Path], columns: Optional[List[str]] = None, **kwargs
+        self, filepath: Union[str, Path], columns: Optional[List[str]] = None, engine: str = "pyarrow", **kwargs
     ) -> pd.DataFrame:
         """
         Read Parquet file from local filesystem or S3
@@ -127,6 +136,8 @@ class FileIO:
         :type filepath: Union[str, Path]
         :param columns: List of columns to read (None = all)
         :type columns: Optional[List[str]]
+        :param engine: Parquet engine (pyarrow or fastparquet)
+        :type engine: str
         :param kwargs: Additional arguments passed to pd.read_parquet
         :return: DataFrame with loaded data
         :rtype: DataFrame
@@ -136,13 +147,13 @@ class FileIO:
         try:
             if self._is_s3_path(filepath):
                 df = self._read_parquet_from_s3(
-                    str(filepath), columns=columns, **kwargs
+                    str(filepath), columns=columns, engine=engine, **kwargs
                 )
             else:
                 logger.info(
-                    "Reading Parquet from local path", extra={"filepath": str(filepath)}
+                    "Reading Parquet from local path", extra={"filepath": str(filepath), "engine": engine}
                 )
-                df = pd.read_parquet(filepath, columns=columns, **kwargs)
+                df = pd.read_parquet(filepath, columns=columns, engine=engine, **kwargs)
 
             logger.info(
                 "Loaded Parquet successfully",
@@ -151,6 +162,7 @@ class FileIO:
                     "rows": len(df),
                     "columns": len(df.columns),
                     "memory_mb": round(df.memory_usage(deep=True).sum() / 1024**2, 2),
+                    "system_memory_available_gb": round(psutil.virtual_memory().available / 1024**3, 2),
                 },
             )
             return df
@@ -170,6 +182,7 @@ class FileIO:
         df: pd.DataFrame,
         filepath: Union[str, Path],
         compression: Literal["snappy", "gzip", "brotli", "zstd"] = "snappy",
+        engine: str = "pyarrow",
         **kwargs,
     ) -> None:
         """
@@ -181,6 +194,8 @@ class FileIO:
         :type filepath: Union[str, Path]
         :param compression: Compression algorithm (snappy, gzip, brotli)
         :type compression: str
+        :param engine: Parquet engine (pyarrow or fastparquet)
+        :type engine: str
         :param kwargs: Additional arguments passed to df.to_parquet
         """
         filepath = Path(filepath)
@@ -188,15 +203,15 @@ class FileIO:
         try:
             if self._is_s3_path(filepath):
                 self._write_parquet_to_s3(
-                    df, str(filepath), compression=compression, **kwargs
+                    df, str(filepath), compression=compression, engine=engine, **kwargs
                 )
             else:
                 filepath.parent.mkdir(parents=True, exist_ok=True)
 
                 logger.info(
-                    "Writing Parquet to local path", extra={"filepath": str(filepath)}
+                    "Writing Parquet to local path", extra={"filepath": str(filepath), "engine": engine}
                 )
-                df.to_parquet(filepath, compression=compression, index=False, **kwargs)
+                df.to_parquet(filepath, compression=compression, index=False, engine=engine, **kwargs)
             logger.info(
                 "Wrote Parquet successfully",
                 extra={
