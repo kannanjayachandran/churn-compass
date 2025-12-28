@@ -245,6 +245,7 @@ def scoring_flow(
     :return: Description
     :rtype: Dict[Any, Any]
     """
+    settings.setup()
     logger.info(
         "Starting batch scoring flow", 
         extra={
@@ -385,11 +386,11 @@ def main():
             model_stage=args.model_stage
         )
 
-        print(f"✅ Scoring completed. Total scored: {summary['total_scored']:,}")
+        print(f"Scoring completed. Total scored: {summary['total_scored']:,}")
 
     except Exception as e:
         logger.error("Batch Scoring failed", exc_info=True)
-        print(f"❌ Scoring failed: {str(e)}")
+        print(f"Scoring failed: {str(e)}")
         raise
 
 if __name__ == "__main__":
