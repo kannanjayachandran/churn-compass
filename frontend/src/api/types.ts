@@ -1,3 +1,5 @@
+/* Core Inputs */
+
 export interface CustomerInput {
     CreditScore: number;
     Geography: "France" | "Spain" | "Germany";
@@ -9,8 +11,10 @@ export interface CustomerInput {
     HasCrCard: number; // 0 or 1
     IsActiveMember: number; // 0 or 1
     EstimatedSalary: number;
-    CardType: "SILVER" | "GOLD" | "DIAMOND" | "PLATINUM";
+    CardType: "Silver" | "Gold" | "Diamond" | "Platinum";
 }
+
+/* Prediction */
 
 export interface PredictionResponse {
     prediction: number;
@@ -37,6 +41,10 @@ export interface ExplanationResponse {
     explanation: SHAPExplanation;
 }
 
+/* ------------------------------------------------------------------ */
+/* Batch */
+/* ------------------------------------------------------------------ */
+
 export interface BatchPredictionRequest {
     customers: CustomerInput[];
     include_features?: boolean;
@@ -53,16 +61,32 @@ export interface BatchPredictionResponse {
     };
 }
 
+/* ------------------------------------------------------------------ */
+/* Top-K */
+/* ------------------------------------------------------------------ */
+
 export interface TopKRequest {
     k?: number;
     k_percent?: number;
 }
 
+export interface TopKCustomer {
+    CustomerId?: string | number;
+    probability: number;
+    Balance?: number;
+    Geography?: string;
+    [key: string]: unknown;
+}
+
 export interface TopKResponse {
-    customers: Array<Record<string, any>>;
+    customers: TopKCustomer[];
     k: number;
     k_percent: number;
 }
+
+/* ------------------------------------------------------------------ */
+/* System / Health */
+/* ------------------------------------------------------------------ */
 
 export interface HealthResponse {
     status: "healthy" | "unhealthy";
@@ -79,8 +103,17 @@ export interface VersionResponse {
     mlflow_tracking_uri: string;
 }
 
+export interface SystemInfo {
+    platform: string;
+    system?: string;
+    memory_total_gb: number;
+    memory_available_gb: number;
+    cpu_percent: number;
+    [key: string]: unknown;
+}
+
 export interface SystemStatusResponse extends HealthResponse {
     metrics: Record<string, number>;
-    params: Record<string, any>;
-    system_info: Record<string, any>;
+    params: Record<string, unknown>;
+    system_info: SystemInfo;
 }

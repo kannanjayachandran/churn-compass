@@ -1,13 +1,9 @@
-/** @type {import('tailwindcss').Config} */
-module.exports = {
-    darkMode: ["class"],
-    content: [
-        './pages/**/*.{ts,tsx}',
-        './components/**/*.{ts,tsx}',
-        './app/**/*.{ts,tsx}',
-        './src/**/*.{ts,tsx}',
-    ],
-    prefix: "",
+import type { Config } from "tailwindcss"
+import animate from "tailwindcss-animate"
+
+const config: Config = {
+    darkMode: ["class", ".dark"],
+
     theme: {
         container: {
             center: true,
@@ -16,16 +12,19 @@ module.exports = {
                 "2xl": "1400px",
             },
         },
+
         extend: {
             fontFamily: {
                 sans: ["Inter", "sans-serif"],
             },
+
             colors: {
                 border: "hsl(var(--border))",
                 input: "hsl(var(--input))",
                 ring: "hsl(var(--ring))",
                 background: "hsl(var(--background))",
                 foreground: "hsl(var(--foreground))",
+
                 primary: {
                     DEFAULT: "hsl(var(--primary))",
                     foreground: "hsl(var(--primary-foreground))",
@@ -54,12 +53,22 @@ module.exports = {
                     DEFAULT: "hsl(var(--card))",
                     foreground: "hsl(var(--card-foreground))",
                 },
+
+                chart: {
+                    "1": "hsl(var(--chart-1))",
+                    "2": "hsl(var(--chart-2))",
+                    "3": "hsl(var(--chart-3))",
+                    "4": "hsl(var(--chart-4))",
+                    "5": "hsl(var(--chart-5))",
+                },
             },
+
             borderRadius: {
                 lg: "var(--radius)",
                 md: "calc(var(--radius) - 2px)",
                 sm: "calc(var(--radius) - 4px)",
             },
+
             keyframes: {
                 "accordion-down": {
                     from: { height: "0" },
@@ -70,11 +79,15 @@ module.exports = {
                     to: { height: "0" },
                 },
             },
+
             animation: {
                 "accordion-down": "accordion-down 0.2s ease-out",
                 "accordion-up": "accordion-up 0.2s ease-out",
             },
         },
     },
-    plugins: [require("tailwindcss-animate")],
+
+    plugins: [animate],
 }
+
+export default config

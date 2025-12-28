@@ -1,7 +1,6 @@
-import React from 'react';
 import { Compass } from 'lucide-react';
 
-export const Header: React.FC = () => {
+export function Header() {
     return (
         <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <div className="container flex h-14 max-w-screen-2xl items-center">
@@ -13,7 +12,8 @@ export const Header: React.FC = () => {
                     <span className="text-sm font-medium text-muted-foreground hidden sm:inline-block">
                         Production Environment
                     </span>
-                    <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" title="System Operational"></div>
+                    <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" title="System Operational" />
+
                 </div>
             </div>
         </header>

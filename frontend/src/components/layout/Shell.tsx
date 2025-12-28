@@ -1,19 +1,18 @@
 import React from 'react';
-import { Header } from './Header';
-import { Footer } from './Footer';
+import { Header } from './Header.tsx';
+import { Footer } from './Footer.tsx';
 
 interface ShellProps {
     children: React.ReactNode;
 }
 
-export const Shell: React.FC<ShellProps> = ({ children }) => {
+export function Shell({ children }: ShellProps) {
     return (
         <div className="flex min-h-screen flex-col bg-background font-sans antialiased">
             <Header />
-            <main className="flex-1 flex flex-col">
-                {children}
-            </main>
+            <main className="flex-1 flex flex-col">{children}</main>
             <Footer />
         </div>
     );
-};
+}
+
