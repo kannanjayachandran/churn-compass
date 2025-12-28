@@ -5,7 +5,8 @@ Pydantic models for request/response validation.
 """
 
 from typing import Optional, List, Dict, Any, Literal
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
+from churn_compass.utils.normalization import normalize_string
 
 
 # Input Schemas
@@ -22,7 +23,14 @@ class CustomerInput(BaseModel):
     HasCrCard: int = Field(ge=0, le=1)
     IsActiveMember: int = Field(ge=0, le=1)
     EstimatedSalary: float = Field(ge=0, le=200_000)
-    CardType: Literal["SILVER", "GOLD", "DIAMOND", "PLATINUM"]
+    CardType: Literal["Silver", "Gold", "Diamond", "Platinum"]
+
+    @field_validator("CardType", "Geography", "Gender", mode="before")
+    @classmethod
+    def normalize_categorical(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return normalize_string(v)
+        return v
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -37,7 +45,7 @@ class CustomerInput(BaseModel):
                 "HasCrCard": 1, 
                 "IsActiveMember": 0, 
                 "EstimatedSalary": 80000.0, 
-                "CardType": "DIAMOND",
+                "CardType": "Diamond",
             }
         }
     )
