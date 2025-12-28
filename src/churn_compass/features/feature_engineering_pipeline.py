@@ -41,6 +41,23 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
         """Required for scikit-learn API."""
         return self
 
+    def get_feature_names_out(self, input_features=None):
+        """
+        Required for scikit-learn Pipeline to propagate feature names.
+        """
+        if input_features is None:
+            return np.array([])
+        
+        # Features added by transform()
+        engineered = [
+            "balance_per_product",
+            "tenure_age_ratio",
+            "is_zero_balance",
+            "high_value_customer",
+            "age_group",
+        ]
+        return np.concatenate([input_features, engineered])
+
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         """
         Create engineered features
