@@ -113,7 +113,7 @@ def configure_metadata(df: pd.DataFrame) -> SingleTableMetadata:
             "Satisfaction Score",
         ]
 
-        categorical = ["Geography", "Gender", "Card Type", "Surname"]
+        categorical = ["Geography", "Gender", "CardType", "Card Type", "Surname"]
 
         binary = ["HasCrCard", "IsActiveMember", "Exited", "Complain"]
 
