@@ -1,0 +1,60 @@
+services:
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    container_name: churn-compass-mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlruns:/mlruns
+    command: >
+      mlflow server  --backend-store-uri /mlruns  --default-artifact-root /mlruns  --host 0.0.0.0
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - churn-net
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: churn-compass-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.docker
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    volumes:
+      - ./mlruns:/mlruns
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - churn-net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    container_name: churn-compass-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - churn-net
+
+networks:
+  churn-net:
+    driver: bridge
