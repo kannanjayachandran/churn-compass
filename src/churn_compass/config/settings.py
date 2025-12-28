@@ -124,7 +124,11 @@ class Settings(BaseSettings):
             f"@{self.postgres_host}:{self.postgres_database}"
         )
 
-    def ensure_directories(self):
+    def setup(self):
+        """Initialize application state (create directories, etc.)"""
+        self._ensure_directories()
+
+    def _ensure_directories(self):
         """Create necessary directories if they don't exist"""
         dirs = [
             self.data_raw_dir,
@@ -140,6 +144,3 @@ class Settings(BaseSettings):
 
 # Global singleton instance
 settings = Settings()
-
-# Ensure all directories exists
-settings.ensure_directories()
