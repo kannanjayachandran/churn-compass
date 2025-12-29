@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
+ENV PYTHONPATH=/app/src
 
 # Enable bytecode compilation
 ENV UV_COMPILE_BYTECODE=1
@@ -17,17 +18,12 @@ ENV UV_COMPILE_BYTECODE=1
 # Copy dependency manifests
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies (frozen to ensure exact versions from lockfile)
-RUN uv sync --frozen --no-cache --no-install-project --no-group dev
-
-# copy metadata first
-COPY pyproject.toml README.md ./
-
-# Copy source
+# Copy source (needed before sync for editable install)
 COPY src/ /app/src/
+COPY README.md ./
 
-# Install the project itself
-RUN uv pip install --no-cache -e .
+# Install dependencies AND project in one step, excluding dev group
+RUN uv sync --frozen --no-cache --no-group dev
 
 EXPOSE 8000
 
