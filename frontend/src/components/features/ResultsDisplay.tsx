@@ -315,8 +315,8 @@ export function ResultsDisplay({ prediction, explanation }: ResultsDisplayProps)
                                             border: 'none',
                                             boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
                                         }}
-                                        formatter={(_value: number, _name: string, props: { payload: { percentage: number } }) => [
-                                            `${props.payload.percentage > 0 ? '+' : ''}${props.payload.percentage.toFixed(1)}%`,
+                                        formatter={(_value: any, _name: any, props: any) => [
+                                            `${props.payload.percentage > 0 ? "+" : ""}${props.payload.percentage.toFixed(1)}%`,
                                             "Impact Contribution",
                                         ]}
                                     />
