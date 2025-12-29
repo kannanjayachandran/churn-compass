@@ -55,7 +55,7 @@ export function PredictForm({ onSubmit, isLoading }: PredictFormProps) {
         handleSubmit,
         reset,
         formState: { errors },
-    } = useForm<FormData>({
+    } = useForm<any>({
         resolver: zodResolver(formSchema),
         defaultValues: {
             CreditScore: 650,
@@ -86,7 +86,7 @@ export function PredictForm({ onSubmit, isLoading }: PredictFormProps) {
                 </CardDescription>
             </CardHeader>
 
-            <form onSubmit={handleSubmit(onFormSubmit)}>
+            <form onSubmit={handleSubmit(onFormSubmit as any)}>
                 <CardContent className="grid gap-6 md:grid-cols-2">
                     {/* Credit Score */}
                     <div className="space-y-2">
@@ -94,7 +94,7 @@ export function PredictForm({ onSubmit, isLoading }: PredictFormProps) {
                         <Input type="number" id="CreditScore" {...register("CreditScore")} />
                         {errors.CreditScore && (
                             <p className="text-xs text-destructive">
-                                {errors.CreditScore.message}
+                                {String(errors.CreditScore.message)}
                             </p>
                         )}
                     </div>
@@ -123,7 +123,7 @@ export function PredictForm({ onSubmit, isLoading }: PredictFormProps) {
                         />
                         {errors.Geography && (
                             <p className="text-xs text-destructive">
-                                {errors.Geography.message}
+                                {String(errors.Geography.message)}
                             </p>
                         )}
                     </div>
@@ -151,7 +151,7 @@ export function PredictForm({ onSubmit, isLoading }: PredictFormProps) {
                         />
                         {errors.Gender && (
                             <p className="text-xs text-destructive">
-                                {errors.Gender.message}
+                                {String(errors.Gender.message)}
                             </p>
                         )}
                     </div>
@@ -162,7 +162,7 @@ export function PredictForm({ onSubmit, isLoading }: PredictFormProps) {
                         <Input type="number" id="Age" {...register("Age")} />
                         {errors.Age && (
                             <p className="text-xs text-destructive">
-                                {errors.Age.message}
+                                {String(errors.Age.message)}
                             </p>
                         )}
                     </div>
@@ -173,7 +173,7 @@ export function PredictForm({ onSubmit, isLoading }: PredictFormProps) {
                         <Input type="number" id="Tenure" {...register("Tenure")} />
                         {errors.Tenure && (
                             <p className="text-xs text-destructive">
-                                {errors.Tenure.message}
+                                {String(errors.Tenure.message)}
                             </p>
                         )}
                     </div>
@@ -189,7 +189,7 @@ export function PredictForm({ onSubmit, isLoading }: PredictFormProps) {
                         />
                         {errors.Balance && (
                             <p className="text-xs text-destructive">
-                                {errors.Balance.message}
+                                {String(errors.Balance.message)}
                             </p>
                         )}
                     </div>
@@ -204,7 +204,7 @@ export function PredictForm({ onSubmit, isLoading }: PredictFormProps) {
                         />
                         {errors.NumOfProducts && (
                             <p className="text-xs text-destructive">
-                                {errors.NumOfProducts.message}
+                                {String(errors.NumOfProducts.message)}
                             </p>
                         )}
                     </div>
@@ -234,7 +234,7 @@ export function PredictForm({ onSubmit, isLoading }: PredictFormProps) {
                         />
                         {errors.CardType && (
                             <p className="text-xs text-destructive">
-                                {errors.CardType.message}
+                                {String(errors.CardType.message)}
                             </p>
                         )}
                     </div>
@@ -262,7 +262,7 @@ export function PredictForm({ onSubmit, isLoading }: PredictFormProps) {
                         />
                         {errors.HasCrCard && (
                             <p className="text-xs text-destructive">
-                                {errors.HasCrCard.message}
+                                {String(errors.HasCrCard.message)}
                             </p>
                         )}
                     </div>
@@ -290,7 +290,7 @@ export function PredictForm({ onSubmit, isLoading }: PredictFormProps) {
                         />
                         {errors.IsActiveMember && (
                             <p className="text-xs text-destructive">
-                                {errors.IsActiveMember.message}
+                                {String(errors.IsActiveMember.message)}
                             </p>
                         )}
                     </div>
@@ -306,7 +306,7 @@ export function PredictForm({ onSubmit, isLoading }: PredictFormProps) {
                         />
                         {errors.EstimatedSalary && (
                             <p className="text-xs text-destructive">
-                                {errors.EstimatedSalary.message}
+                                {String(errors.EstimatedSalary.message)}
                             </p>
                         )}
                     </div>
