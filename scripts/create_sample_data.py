@@ -1,32 +1,24 @@
+#!/usr/bin/env python3
 """
-Churn Compass - Synthetic Data Generator
+Churn Compass - Custom Synthetic Data Generator 
 
-Generates synthetic data and processes it through the ingestion pipeline.
-
-Purpose:
-- Generate synthetic churn dataset for pipeline & UI demonstration.
-- Quality evaluation using SDV metrics
-
-Outputs:
-- data/raw/sample.csv (raw synthetic data, default - 2500 rows)
-- data/processed/sample_reference.parquet (base synthetic, pipeline-processed)
-- data/processed/sample_current_drifted.parquet (drifted synthetic, pipeline-processed; default 1000 rows) 
-- quality_report.json (SDV quality metrics)
-
-Usage:
+We initially use SDV for synthetic data generation, it was a massive 
+overkill for what we’re actually using it hence we replaced SDV with a 
+lightweight Gaussian-copula-like sampler +
+conditional churn model (Exited depends on Age + Balance).
 """
 
 import argparse
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 import numpy as np
 import pandas as pd
-from sdv.evaluation.single_table import evaluate_quality, run_diagnostic
-from sdv.metadata import SingleTableMetadata
-from sdv.single_table import GaussianCopulaSynthesizer
+from scipy import stats
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
 
 from churn_compass.config.settings import settings
 from churn_compass.io.file_io import FileIO
@@ -37,19 +29,8 @@ from churn_compass.pipelines.ingest_pipeline import data_ingestion_flow
 logger = setup_logger("Synthetic Data Generator")
 
 
-# Data loading & cleaning
 @log_execution_time(logger)
 def load_and_clean(input_path: str) -> pd.DataFrame:
-    """
-    Load real reference data and apply basic cleaning
-
-    :param input_path: Path to real dataset CSV
-    :type input_path: str
-    :return: Cleaned DataFrame
-    :rtype: DataFrame
-    :raise: FileNotFoundError, If input file doesn't exist
-    """
-
     logger.info(f"Started loading and cleaning data from: {input_path}")
 
     try:
@@ -85,60 +66,59 @@ def load_and_clean(input_path: str) -> pd.DataFrame:
         raise
 
 
-# Metadata configuration
+# ----------------------- metadata configuration -----------------------
 @log_execution_time(logger)
-def configure_metadata(df: pd.DataFrame) -> SingleTableMetadata:
+def configure_metadata(df: pd.DataFrame) -> Dict:
     """
-    Configure SDV metadata for the dataset. This ensures synthetic data has the same
-    structure and types as data processed through the pipeline.
-
-    :param df: Input DataFrame
-    :type df: pd.DataFrame
-    :return: Configured metadata object
-    :rtype: SingleTableMetadata
+    Create a lightweight metadata dict describing column types and basic stats.
+    (Replaces SDV SingleTableMetadata)
     """
     try:
-        metadata = SingleTableMetadata()
-        metadata.detect_from_dataframe(df)
+        numerical = []
+        categorical = []
+        binary = []
+        id_cols = []
 
-        # define column types
-        numerical = [
-            "CreditScore",
-            "Age",
-            "Tenure",
-            "Balance",
-            "NumOfProducts",
-            "EstimatedSalary",
-            "Point Earned",
-            "Satisfaction Score",
-        ]
+        for col in df.columns:
+            if col.lower() in ("rownumber", "row_number", "customerid", "customer_id"):
+                id_cols.append(col)
+                continue
 
-        categorical = ["Geography", "Gender", "CardType", "Card Type", "Surname"]
+            if pd.api.types.is_integer_dtype(df[col]) or pd.api.types.is_float_dtype(df[col]):
+                # Heuristic: small unique values -> categorical/binary
+                nunique = df[col].nunique(dropna=True)
+                if nunique <= 5:
+                    unique_vals = set(df[col].dropna().unique())
+                    # Only classify as binary if values are exactly {0, 1}
+                    if unique_vals == {0, 1} or unique_vals == {0} or unique_vals == {1}:
+                        binary.append(col)
+                    else:
+                        categorical.append(col)
+                else:
+                    numerical.append(col)
+            else:
+                categorical.append(col)
 
-        binary = ["HasCrCard", "IsActiveMember", "Exited", "Complain"]
-
+        # basic stats for numerical columns
+        stats_summary = {}
         for col in numerical:
-            if col in df.columns:
-                metadata.update_column(col, sdtype="numerical")
+            col_series = df[col].dropna()
+            stats_summary[col] = {
+                "min": float(col_series.min()),
+                "max": float(col_series.max()),
+                "mean": float(col_series.mean()),
+                "std": float(col_series.std()),
+            }
 
-        for col in categorical:
-            if col in df.columns:
-                metadata.update_column(col, sdtype="categorical")
+        metadata = {
+            "numerical": numerical,
+            "categorical": categorical,
+            "binary": binary,
+            "id_cols": id_cols,
+            "stats": stats_summary,
+        }
 
-        for col in binary:
-            if col in df.columns:
-                metadata.update_column(col, sdtype="categorical")
-
-        # Handle ID columns if present
-        if "RowNumber" in df.columns:
-            metadata.update_column("RowNumber", sdtype="id")
-            metadata.set_primary_key("RowNumber")
-
-        if "CustomerId" in df.columns:
-            metadata.update_column("RowNumber", sdtype="id")
-
-        logger.info("Metadata configured successfully")
-
+        logger.info("Metadata configured successfully", extra={"metadata": metadata})
         return metadata
 
     except Exception as e:
@@ -153,32 +133,19 @@ def configure_metadata(df: pd.DataFrame) -> SingleTableMetadata:
         raise
 
 
-# Drift application
+# ----------------------- drift application -----------------------
 @log_execution_time(logger)
 def apply_drift(df: pd.DataFrame, Original_df: pd.DataFrame) -> pd.DataFrame:
     """
     Apply drift transformation to synthetic data.
-
-    Drift specification:
-        - Age: +5 years average shift
-        - Churn rate: Increase from ~21% to 27%
-        - Other numerical columns ±2% random noise
-
-    :param df: Synthetic Dataframe to apply drift to
-    :type df: pd.DataFrame
-    :param Original_df: Original reference DataFrame
-    :type Original_df: pd.DataFrame
-    :return: Drifted DataFrame
-    :rtype: DataFrame
     """
-
     logger.info("Applying drift transformations")
 
     try:
         df_drift = df.copy()
 
         # Age drift +5 years
-        if "Age" in df_drift.columns:
+        if "Age" in df_drift.columns and "Age" in Original_df.columns:
             original_age_mean = Original_df["Age"].mean()
             df_drift["Age"] = df_drift["Age"] + 5
             df_drift["Age"] = df_drift["Age"].clip(
@@ -196,7 +163,7 @@ def apply_drift(df: pd.DataFrame, Original_df: pd.DataFrame) -> pd.DataFrame:
             target_churn = 0.28
             current_churn = df_drift["Exited"].mean()
             additional_churns = (
-                int(len(df_drift) * target_churn) - df_drift["Exited"].sum()
+                int(len(df_drift) * target_churn) - int(df_drift["Exited"].sum())
             )
 
             if additional_churns > 0:
@@ -213,15 +180,22 @@ def apply_drift(df: pd.DataFrame, Original_df: pd.DataFrame) -> pd.DataFrame:
                 f"(target: {target_churn:.2%})"
             )
 
-        # 0.35 drift to other numerical columns
-        drift_cols = ["CreditScore", "Balance", "EstimatedSalary", "Tenure", "NumOfProducts"]
+        # noise to other numerical columns
+        drift_cols = [
+            "CreditScore",
+            "Balance",
+            "EstimatedSalary",
+            "Tenure",
+            "NumOfProducts",
+        ]
         for col in drift_cols:
             if col in df_drift.columns and pd.api.types.is_numeric_dtype(df_drift[col]):
                 noise = np.random.normal(0, 0.35, len(df_drift))
                 df_drift[col] = df_drift[col] * (1 + noise)
-                df_drift[col] = df_drift[col].clip(
-                    lower=Original_df[col].min(), upper=Original_df[col].max()
-                )
+                if col in Original_df.columns:
+                    df_drift[col] = df_drift[col].clip(
+                        lower=Original_df[col].min(), upper=Original_df[col].max()
+                    )
 
         logger.info(f"Drift applied to {len(drift_cols)} additional columns")
         return df_drift
@@ -238,60 +212,295 @@ def apply_drift(df: pd.DataFrame, Original_df: pd.DataFrame) -> pd.DataFrame:
         raise
 
 
-# Quality evaluation
+# ----------------------- quality evaluation (SDV-free) -----------------------
+def psi(expected: np.ndarray, actual: np.ndarray, bins: int = 10) -> float:
+    """Population Stability Index for a single numerical vector."""
+    eps = 1e-8
+    expected = np.asarray(expected).ravel()
+    actual = np.asarray(actual).ravel()
+
+    if len(expected) == 0 or len(actual) == 0:
+        return 0.0
+
+    # compute quantile bins based on expected
+    quantiles = np.linspace(0, 1, bins + 1)
+    bin_edges = np.quantile(expected, quantiles)
+
+    # ensure unique bin edges for histogram (constant data edge case)
+    unique_edges = np.unique(bin_edges)
+    if len(unique_edges) < 2:
+        # constant data: PSI is 0 if both constant and equal, else undefined
+        return 0.0
+
+    e_counts, _ = np.histogram(expected, bins=unique_edges)
+    a_counts, _ = np.histogram(actual, bins=unique_edges)
+
+    e_perc = e_counts / (len(expected) + eps)
+    a_perc = a_counts / (len(actual) + eps)
+
+    psi_value = np.sum((e_perc - a_perc) * np.log((e_perc + eps) / (a_perc + eps)))
+    return float(psi_value)
+
+
+def ks_report(real: pd.DataFrame, synth: pd.DataFrame, cols: List[str]) -> Dict[str, float]:
+    result = {}
+    for col in cols:
+        if col in real.columns and col in synth.columns and pd.api.types.is_numeric_dtype(real[col]):
+            try:
+                stat = stats.ks_2samp(real[col].dropna(), synth[col].dropna()).statistic
+                result[col] = float(stat)
+            except Exception:
+                result[col] = None
+        else:
+            result[col] = None
+    return result
+
+
+def corr_matrix_diff(real: pd.DataFrame, synth: pd.DataFrame, cols: List[str]) -> float:
+    cols_present = [c for c in cols if c in real.columns and c in synth.columns and pd.api.types.is_numeric_dtype(real[c])]
+    if len(cols_present) < 2:
+        return 0.0
+    r_corr = real[cols_present].corr().fillna(0).values
+    s_corr = synth[cols_present].corr().fillna(0).values
+    diff = np.abs(r_corr - s_corr)
+    # summary metric: mean absolute difference
+    return float(np.nanmean(diff))
+
+
 @log_execution_time(logger)
-def evaluate_synthetic_data_quality(
-    real_data: pd.DataFrame, synthetic_data: pd.DataFrame, metadata: SingleTableMetadata
-) -> Dict:
+def evaluate_synthetic_data_quality(real_data: pd.DataFrame, synthetic_data: pd.DataFrame, metadata: Dict) -> Dict:
     """
-    Evaluate synthetic data quality using SDV metrics
-
-    :param real_data: Original dataset
-    :type real_data: pd.DataFrame
-    :param synthetic_data: Generated synthetic dataset
-    :type synthetic_data: pd.DataFrame
-    :param metadata: SDV metadata
-    :type metadata: SingleTableMetadata
-    :return: Quality report dictionary
-    :rtype: Dict[Any, Any]
+    Run lightweight quality checks: KS for numerical columns, PSI, and correlation matrix diff.
     """
-    logger.info("Running SDV quality evaluation...")
-
+    logger.info("Running lightweight quality evaluation (KS / PSI / CorrDiff)")
     try:
-        # Run quality evaluation
-        quality_report = evaluate_quality(
-            real_data=real_data, synthetic_data=synthetic_data, metadata=metadata
-        )
+        numerical = metadata.get("numerical", [])
 
-        # Run diagnostic
-        diagnostics_report = run_diagnostic(
-            real_data=real_data, synthetic_data=synthetic_data, metadata=metadata
-        )
+        ks = ks_report(real_data, synthetic_data, numerical)
 
-        quality_score = quality_report.get_score()
-        properties = quality_report.get_properties()
+        psi_vals = {}
+        for col in numerical:
+            if col in real_data.columns and col in synthetic_data.columns:
+                psi_vals[col] = psi(real_data[col].dropna().values, synthetic_data[col].dropna().values)
+            else:
+                psi_vals[col] = None
 
-        logger.info(
-            "Quality evaluation completed",
-            extra={
-                "overall_score": f"{quality_score:.3f}",
-                "column_shapes_score": f"{properties.get('Column Shapes', {}).get('Score', 0):.3f}",
-                "column_pair_trend_score": f"{properties.get('Column Pair Trends', {}).get('Score', 0):.3f}",
-            },
-        )
+        corr_diff = corr_matrix_diff(real_data, synthetic_data, numerical)
 
-        return {
-            "quality_score": quality_score,
-            "properties": properties.to_dict(),
-            "diagnostic": str(diagnostics_report),
+        # simple aggregated score (lower is better). We return raw components so consumers can decide.
+        overall = {
+            "ks": ks,
+            "psi": psi_vals,
+            "corr_matrix_mean_abs_diff": corr_diff,
         }
+
+        logger.info("Quality evaluation completed", extra={"summary": {"corr_diff": corr_diff}})
+        return overall
 
     except Exception as e:
         logger.warning(f"Quality evaluation failed: {e}")
-        return {"overall_quality_score": None, "error": str(e)}
+        return {"error": str(e)}
 
 
-# Data generation
+# ----------------------- conditional churn model -----------------------
+class ConditionalChurnModel:
+    """Logistic model for P(Exited=1 | Age, Balance) learned from real data."""
+
+    def __init__(self, age_col: str = "Age", balance_col: str = "Balance", target_col: str = "Exited"):
+        self.age_col = age_col
+        self.balance_col = balance_col
+        self.target_col = target_col
+        self.scaler: Optional[StandardScaler] = None
+        self.model: Optional[LogisticRegression] = None
+        self.base_rate: float = 0.0
+
+    def fit(self, df: pd.DataFrame):
+        if self.age_col not in df.columns or self.balance_col not in df.columns or self.target_col not in df.columns:
+            raise ValueError("Dataframe must contain Age, Balance, and Exited columns to fit churn model")
+
+        X = df[[self.age_col, self.balance_col]].fillna(0.0)
+        y = df[self.target_col].fillna(0).astype(int).values
+
+        self.scaler = StandardScaler()
+        X_scaled = self.scaler.fit_transform(X)
+
+        self.model = LogisticRegression(solver="lbfgs", max_iter=1000)
+        self.model.fit(X_scaled, y)
+
+        self.base_rate = float(np.mean(y))
+        logger.info(f"Fitted conditional churn model. base_rate={self.base_rate:.4f}")
+        return self
+
+    def sample(self, synthetic_df: pd.DataFrame) -> np.ndarray:
+        if self.model is None or self.scaler is None:
+            raise RuntimeError("Model not fitted")
+
+        Xs = synthetic_df[[self.age_col, self.balance_col]].copy().fillna(0.0)
+        Xs_scaled = self.scaler.transform(Xs)
+        probs = self.model.predict_proba(Xs_scaled)[:, 1]
+        return np.random.binomial(1, probs)
+
+
+# ----------------------- lightweight tabular synthesizer -----------------------
+class LightweightTabularSynthesizer:
+    """Lightweight Gaussian-copula-like sampler for tabular data.
+
+    - Numerical columns: transforms empirical -> normal by ranks; samples multivariate normal using empirical covariance of transformed ranks; inverse-quantiles back.
+    - Categorical: empirical sampling
+    - Binary (non-churn): independent Bernoulli using empirical rates
+    - Exited: handled by ConditionalChurnModel when provided
+    """
+
+    def __init__(
+        self,
+        numerical_cols: List[str],
+        categorical_cols: List[str],
+        binary_cols: List[str],
+        id_cols: Optional[List[str]] = None,
+        churn_model: Optional[ConditionalChurnModel] = None,
+    ):
+        self.numerical_cols = numerical_cols
+        self.categorical_cols = categorical_cols
+        self.binary_cols = binary_cols
+        self.id_cols = id_cols or []
+        self.churn_model = churn_model
+
+        # learned attributes
+        self.num_empirical_sorted = {}
+        self.cov = None
+        self.cat_distributions = {}
+        self.binary_rates = {}
+        self._fitted = False
+
+    def fit(self, df: pd.DataFrame):
+        # numerical: build empirical CDFs and gaussian transforms
+        gaussian_data = []
+        for col in self.numerical_cols:
+            if col not in df.columns:
+                continue
+            vals = df[col].astype(float).dropna().values
+            if len(vals) == 0:
+                continue
+            sorted_vals = np.sort(vals)
+            self.num_empirical_sorted[col] = sorted_vals
+
+            # ranks -> uniform -> normal
+            ranks = stats.rankdata(vals) / (len(vals) + 1.0)
+            gaussian = stats.norm.ppf(ranks)
+            gaussian_data.append(gaussian)
+
+        if len(gaussian_data) >= 1:
+            gaussian_stack = np.vstack(gaussian_data).T
+            if gaussian_stack.ndim == 1:
+                gaussian_stack = gaussian_stack.reshape(-1, 1)
+            raw_cov = np.cov(gaussian_stack, rowvar=False)
+            # ensure cov is always 2D (np.cov returns scalar for single column)
+            self.cov = np.atleast_2d(raw_cov)
+        else:
+            self.cov = None
+
+        # categorical
+        for col in self.categorical_cols:
+            if col in df.columns:
+                counts = df[col].value_counts(dropna=True)
+                if counts.sum() > 0:
+                    self.cat_distributions[col] = (counts.index.tolist(), (counts / counts.sum()).values.tolist())
+
+        # binary (excluding Exited)
+        for col in self.binary_cols:
+            if col in df.columns and col != "Exited":
+                vals = df[col].dropna().astype(int).values
+                if len(vals) > 0:
+                    rate = float(np.mean(vals))
+                    # clip rate to valid probability range
+                    self.binary_rates[col] = np.clip(rate, 0.0, 1.0)
+
+        # churn model
+        if self.churn_model is not None:
+            try:
+                self.churn_model.fit(df)
+            except Exception as e:
+                logger.warning(f"Churn model fitting failed: {e}")
+                self.churn_model = None
+
+        self._fitted = True
+        logger.info("Lightweight synthesizer fitted")
+        return self
+
+    def sample(self, n_rows: int, start_row_number: int = 1, start_customer_id: int = 100000) -> pd.DataFrame:
+        if not self._fitted:
+            raise RuntimeError("Synthesizer not fitted. Call fit() with real data first.")
+
+        out = pd.DataFrame(index=range(n_rows))
+
+        # Generate ID columns first
+        for col in self.id_cols:
+            col_lower = col.lower()
+            if col_lower in ("rownumber", "row_number"):
+                out[col] = np.arange(start_row_number, start_row_number + n_rows)
+            elif col_lower in ("customerid", "customer_id"):
+                out[col] = np.arange(start_customer_id, start_customer_id + n_rows)
+            else:
+                # Generic ID: generate sequential integers
+                out[col] = np.arange(1, n_rows + 1)
+
+        # numerical sampling
+        if self.cov is not None and len(self.num_empirical_sorted) > 0:
+            cols = [c for c in self.numerical_cols if c in self.num_empirical_sorted]
+            dim = len(cols)
+            # if cov is scalar (single column), make it 1x1
+            cov = np.array(self.cov, copy=True)
+            mean = np.zeros(dim)
+            try:
+                z = np.random.multivariate_normal(mean=mean, cov=cov, size=n_rows)
+            except Exception:
+                # fallback: independent normals
+                z = np.random.normal(size=(n_rows, dim))
+
+            for i, col in enumerate(cols):
+                u = stats.norm.cdf(z[:, i])  # uniform in (0,1)
+                # map to empirical quantiles
+                sorted_vals = self.num_empirical_sorted[col]
+                out[col] = np.quantile(sorted_vals, u)
+
+        else:
+            # as fallback, sample from each empirical distribution independently
+            for col, sorted_vals in self.num_empirical_sorted.items():
+                u = np.random.rand(n_rows)
+                out[col] = np.quantile(sorted_vals, u)
+
+        # categorical
+        for col, (choices, probs) in self.cat_distributions.items():
+            out[col] = np.random.choice(choices, size=n_rows, p=probs)
+
+        # binary (non-churn)
+        for col, rate in self.binary_rates.items():
+            # ensure rate is valid for binomial distribution
+            valid_rate = np.clip(rate, 0.0, 1.0) if not np.isnan(rate) else 0.5
+            out[col] = np.random.binomial(1, valid_rate, size=n_rows)
+
+        # churn
+        if self.churn_model is not None:
+            try:
+                out["Exited"] = self.churn_model.sample(out)
+            except Exception as e:
+                logger.warning(f"Churn sampling failed: {e} -- falling back to global rate")
+                base_rate = getattr(self.churn_model, "base_rate", None)
+                if base_rate is None:
+                    base_rate = 0.1
+                out["Exited"] = np.random.binomial(1, base_rate, size=n_rows)
+        else:
+            # fallback: uniform based on mean of provided binary rates or 0.1
+            if "Exited" in self.binary_rates:
+                rate = self.binary_rates["Exited"]
+            else:
+                rate = 0.1
+            out["Exited"] = np.random.binomial(1, rate, size=n_rows)
+
+        return out
+
+
+# ----------------------- data generation workflow -----------------------
 @log_execution_time(logger)
 def generate_synthetic_data(
     input_path: str,
@@ -300,22 +509,7 @@ def generate_synthetic_data(
     skip_pipeline: bool = False,
     output_dir: Optional[str] = None,
 ) -> Dict[str, str]:
-    """
-    Synthetic data generation workflow
 
-    :param input_path: Path to real dataset CSV
-    :type input_path: str
-    :param base_rows: Number of base synthetic rows
-    :type base_rows: int
-    :param drift_rows: Number of drifted synthetic rows
-    :type drift_rows: int
-    :param skip_pipeline: Skip pipeline processing
-    :type skip_pipeline: bool
-    :param output_dir: Output director (None = use settings)
-    :type output_dir: str
-    :return: Dictionary of output file paths
-    :rtype: Dict[str, str]
-    """
     logger.info("Synthetic data generator Started")
 
     try:
@@ -338,29 +532,37 @@ def generate_synthetic_data(
         # Step: 1 - Load data
         real_df = load_and_clean(input_path)
 
-        # Step: 2 - Configure metadata
+        # Step: 2 - Configure metadata (lightweight)
         metadata = configure_metadata(real_df)
 
-        # Step: 3 - Train synthesizer
-        synthesizer = GaussianCopulaSynthesizer(
-            metadata=metadata,
-            enforce_min_max_values=True,
-            enforce_rounding=True,
-            numerical_distributions={
-                "CreditScore": "beta",
-                "Age": "gamma",
-                "Balance": "beta",
-                "EstimatedSalary": "beta",
-                "NumOfProducts": "gamma", 
-            },
+        # Step: 3 - Train synthesizer (lightweight)
+        numerical_cols = metadata.get("numerical", [])
+        categorical_cols = metadata.get("categorical", [])
+        binary_cols = metadata.get("binary", [])
+        id_cols = metadata.get("id_cols", [])
+        
+        # Ensure required ID columns are always generated for pipeline compatibility
+        required_id_cols = ["RowNumber", "CustomerId"]
+        for col in required_id_cols:
+            if col not in id_cols:
+                id_cols.append(col)
+
+        churn_model = ConditionalChurnModel(age_col="Age", balance_col="Balance", target_col="Exited")
+
+        synthesizer = LightweightTabularSynthesizer(
+            numerical_cols=numerical_cols,
+            categorical_cols=categorical_cols,
+            binary_cols=binary_cols,
+            id_cols=id_cols,
+            churn_model=churn_model,
         )
         synthesizer.fit(real_df)
 
         # Step: 4 - Generate synthetic data
-        synthetic_base = synthesizer.sample(num_rows=base_rows)
+        synthetic_base = synthesizer.sample(n_rows=base_rows)
 
         # Step: 5 - Generate drifted synthetic data
-        synthetic_drift_raw = synthesizer.sample(num_rows=drift_rows)
+        synthetic_drift_raw = synthesizer.sample(n_rows=drift_rows)
         synthetic_drift = apply_drift(synthetic_drift_raw, real_df)
 
         # Step: 6 - Save raw synthetic data
@@ -402,9 +604,7 @@ def generate_synthetic_data(
             logger.info("Pipeline processing completed successfully")
 
         # Step: 8 - Quality evaluation
-        quality_metrics = evaluate_synthetic_data_quality(
-            real_df, synthetic_base, metadata
-        )
+        quality_metrics = evaluate_synthetic_data_quality(real_df, synthetic_base, metadata)
 
         # save quality report
         with open(quality_report_path, "w") as f:
@@ -421,10 +621,6 @@ def generate_synthetic_data(
             )
 
         logger.info(f"Quality report saved to {quality_report_path}")
-
-        logger.info(
-            f"Quality score: {quality_metrics.get('overall_quality_score', 'N/A')}"
-        )
 
         return {
             "raw_csv": str(raw_csv_path),
@@ -445,23 +641,13 @@ def generate_synthetic_data(
         )
         raise
 
-# CLI arguments
+
+# ----------------------- CLI arguments -----------------------
+
 def parse_arguments():
-    """parse commandline arguments"""
     parser = argparse.ArgumentParser(
-        description="Generate synthetic churn dataset using SDV + Pipeline",
+        description="Generate synthetic churn dataset (lightweight) + Pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-                Examples:
-                # Generating data using GaussianCopula
-                python synthetic_data_generator.py --input data/raw/real_data.csv
-
-                # Custom row counts (DO NOT USE THIS DATA FOR TRAINING)
-                python synthetic_data_generator.py --input data/raw/real_data.csv --base-rows 5000 --drift-rows 2000
-
-                # Skip pipeline processing (faster, but doesn't validate!)
-                python synthetic_data_generator.py --input data/raw/real_data.csv --skip-pipeline
-                """,
     )
 
     parser.add_argument(
@@ -501,9 +687,9 @@ def parse_arguments():
     return parser.parse_args()
 
 
-# CLI
+# ----------------------- CLI main -----------------------
+
 def main():
-    """CLI entry point"""
     args = parse_arguments()
 
     logger.info(
