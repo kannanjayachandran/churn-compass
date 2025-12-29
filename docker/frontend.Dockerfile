@@ -1,4 +1,4 @@
-FROM oven/bun:canary-alpine
+FROM oven/bun:canary-alpine AS builder
 
 WORKDIR /app
 
@@ -11,9 +11,14 @@ RUN bun install --frozen-lockfile
 # Copy the rest of the frontend code
 COPY frontend ./
 
-# Use a non-root user for security
-USER bun
+RUN bun run build
 
-EXPOSE 3000
+# ---------- Runtime stage ----------
+FROM nginx:alpine
 
-CMD ["bun", "run", "dev"]
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
