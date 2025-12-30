@@ -1,14 +1,14 @@
 """
 Churn Compass - Configuration Management
 
-Central configuration for all project settings. Environment variables override defaults via pydantic BaseSettings.
+Central configuration for all project settings.
+Environment variables override defaults via pydantic BaseSettings.
 """
 
 from pathlib import Path
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, model_validator
-
 
 # Project Paths
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -38,7 +38,6 @@ class Settings(BaseSettings):
 
     # Data Paths
     data_raw_dir: Path = DATA_DIR / "raw"
-    data_interim_dir: Path = DATA_DIR / "interim"
     data_processed_dir: Path = DATA_DIR / "processed"
 
     # MLflow
@@ -68,10 +67,10 @@ class Settings(BaseSettings):
 
     # Monitoring
     prediction_drift_threshold: float = 0.5
-    monitoring_report_json_output_path: Path = DATA_DIR / "processed"
-    monitoring_report_html_output_path: Path = DATA_DIR / "processed"
+    monitoring_report_json_output_path: Path = DATA_DIR / "artifacts"
+    monitoring_report_html_output_path: Path = DATA_DIR / "artifacts"
     slack_webhook_url: Optional[str] = None
-    
+
     @model_validator(mode="after")
     def validate_splits(self):
         """Ensure splits makes sense."""
@@ -80,7 +79,7 @@ class Settings(BaseSettings):
         return self
 
     # Business metrics Configuration
-    top_k_percent: float = 0.10
+    top_k_percent: float = 0.15
 
     # Feature flags
     enable_shap_explanations: bool = True
@@ -94,10 +93,6 @@ class Settings(BaseSettings):
     id_columns: list[str] = Field(
         default_factory=lambda: ["RowNumber", "CustomerId", "Surname"]
     )
-    # Some customers who has no products, have points
-    misleading_columns: list[str] = Field(
-        default_factory=lambda: ["Point Earned"]
-    )
 
     # API Configuration
     api_host: str = "0.0.0.0"
@@ -107,12 +102,6 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO")
     log_format: str = Field(default="json")
     log_file: Optional[Path] = PROJECT_ROOT / "logs" / "churn_compass.log"
-
-    # S3 for future production use
-    s3_enabled: bool = False
-    s3_bucket: str = ""
-    s3_prefix: str = "churn-compass"
-    aws_region: str = "us-east-1"
 
     # helper functions
     def get_postgres_uri(self) -> str:
@@ -132,7 +121,6 @@ class Settings(BaseSettings):
         """Create necessary directories if they don't exist"""
         dirs = [
             self.data_raw_dir,
-            self.data_interim_dir,
             self.data_processed_dir,
             MLFLOW_DIR,
             self.log_file.parent if self.log_file else None,
