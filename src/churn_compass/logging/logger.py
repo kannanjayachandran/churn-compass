@@ -1,9 +1,6 @@
 """
 Churn Compass - Structured Logging System
 
-Production-grade logging with JSON formatting for easy parsing by
-log aggregation systems (ELK, Splunk, CloudWatch, Datadog).
-
 Features:
 - Structured JSON logs with context fields
 - PII masking capabilities
@@ -22,7 +19,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Set
 from contextvars import ContextVar
 
-from churn_compass.config import settings
+from churn_compass import settings
 
 # Context (pipeline-level metadata)
 _run_id_ctx: ContextVar[Optional[str]] = ContextVar("run_id", default=None)
@@ -60,9 +57,7 @@ _configured_loggers: set[str] = set()
 
 
 class ContextFilter(logging.Filter):
-    """
-    Cleaner way to inject context variables into log records.
-    """
+    """Cleaner way to inject context variables into log records."""
     def filter(self, record: logging.LogRecord) -> bool:
         record.run_id = _run_id_ctx.get()
         record.stage = _stage_ctx.get()
@@ -122,7 +117,7 @@ class JSONFormatter(logging.Formatter):
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)
 
-        # Add extra fields (flattened)
+        # Add extra fields
         if self.include_extra:
             extra = {
                 k: v for k, v in record.__dict__.items()
@@ -134,9 +129,7 @@ class JSONFormatter(logging.Formatter):
                 # Mask PII and merge into top-level for better ingestibility
                 masked_extra = mask_pii(extra)
                 for k, v in masked_extra.items():
-                    # Prefix to avoid collision with standard fields if necessary, 
-                    # but usually unnecessary in modern aggregators.
-                    log_data[f"ctx_{k}"] = v
+                    log_data[k] = v
 
         return log_data
 
@@ -212,7 +205,7 @@ def log_execution_time(logger: logging.Logger):
                 logger.info(
                     f"Task {func.__name__} completed",
                     extra={
-                        "duration_sec": round(duration, 4),
+                        "duration_sec": round(duration, 3),
                         "status": "success",
                     },
                 )
