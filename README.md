@@ -2,19 +2,19 @@
 
 <h1 align=center> 🧭 Churn Compass </h1>
 
-> **Production-Grade Customer Churn Prediction Platform for Retail Banking**
+> **Customer Churn Prediction Platform for Retail Banking**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 ![Status](https://img.shields.io/badge/Status-Active-success)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 ---
 
-## 🚀 Overview
+## Overview
 
 Churn Compass predicts **which customers are most likely to churn**, enabling targeted retention campaigns and revenue protection.
 
-### 🔑 Key Capabilities
+### Key Capabilities
 
 | Feature | Description |
 |--------|------------|
@@ -22,15 +22,15 @@ Churn Compass predicts **which customers are most likely to churn**, enabling ta
 | **Optuna Search**             | Automated hyperparameter optimization                |
 | **MLflow Registry**           | Model registration, lineage, and experiment tracking |
 | **Prefect Workflows**         | Ingestion, training, monitoring, retraining          |
-| **FastAPI Serving**           | Real-time scoring + batch scoring APIs               |
 | **Evidently**                 | Drift detection, monitoring reports                  |
-| **React UI**                  | Dashboard for predictions, SHAP, drift               |
+| **FastAPI Serving**           | Real-time scoring + batch scoring APIs               |
+| **React UI**                  | Dashboard for predictions and SHAP                   |
 | **DuckDB + Postgres**         | Local development + production RDBMS                 |
-| **Synthetic Test Data (SDV)** | Demo and testing without real PII                    |
+| **Cobra CLI**                 | Command-line interface to build, deploy and run Churn Compass with Docker         |
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 
@@ -62,6 +62,7 @@ churn-compass/
 ├── docker/             # Container deployment configurations
 ├── docs/               # Project documentation
 ├── logs/               # Application logs
+├── cli/                # Cobra CLI for building, deploying and running Churn Compass
 ├── mlruns/             # MLflow experiment tracking store
 ├── pyproject.toml      # Build system and dependencies (uv)
 ├── .env                # Local environment variables
@@ -72,9 +73,9 @@ churn-compass/
 
 ---
 
-## ⚙️ Installation & Setup
+## Installation & Setup
 
-### **Automated Setup (Recommended)**
+### Automated Setup
 
 ```bash
 chmod +x setup.sh
@@ -89,17 +90,17 @@ source .venv/bin/activate   # if uv created env
 source venv/bin/activate
 ```
 
-### **Manual Setup**
+### Using Cobra CLI
 
 ```bash
-pip install -r requirements.txt
+-- Coming soon
 ```
 
 ---
 
-## 🌱 Synthetic Demo Data
+## Synthetic Demo Data
 
-This project supports **SDV synthetic data generation** for:
+This project supports **synthetic data generation** for:
 
 - ✔ UI demos
 - ✔ Pipeline testing
@@ -112,11 +113,9 @@ Generate sample data:
 python scripts/create_sample_data.py
 ```
 
-> Do install dev dependencies before running the script. `SDV` installation can take some time.
-
 ---
 
-## ⚡ API Serving
+## API Serving
 
 Start FastAPI:
 
@@ -134,7 +133,7 @@ curl -X POST http://localhost:8000/api/predict \
 
 ---
 
-## 🚘 Drift Monitoring (Evidently)
+## Drift Monitoring (Evidently)
 
 ```bash
 python -m churn_compass.monitoring.check_drift \
@@ -144,7 +143,7 @@ python -m churn_compass.monitoring.check_drift \
 
 ---
 
-## 📊 React UI Dashboard
+## React UI Dashboard
 
 Start frontend:
 
@@ -158,17 +157,16 @@ Open `http://localhost:5173` in your browser.
 
 ---
 
-## 🧪 Testing & Code Quality
+## Testing & Code Quality
 
 ```bash
 pytest -v
 ruff check src/
-mypy src/
 ```
 
 ---
 
-## 📌 Business Metrics Tracked
+## Business Metrics Tracked
 
 * **Precision@K (Top decile targeting)**
 * **Recall@K**
@@ -178,7 +176,7 @@ mypy src/
 
 ---
 
-## 🔒 Security & Privacy
+## Security & Privacy
 
 * PII masked in logs
 * Environment-based secrets
@@ -187,6 +185,6 @@ mypy src/
 
 ---
 
-## 📝 License
+## License
 
 MIT — free for commercial and academic use.
