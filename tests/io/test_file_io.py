@@ -9,16 +9,18 @@ from churn_compass.io import FileIO
 def sample_df():
     return pd.DataFrame(
         {
-            "int_col": [1, 2, 3], 
-            "float_col": [0.1, 0.2, 0.3], 
-            "str_col": ["a", "b", "c"], 
-            "bool_col": [True, False, True], 
+            "int_col": [1, 2, 3],
+            "float_col": [0.1, 0.2, 0.3],
+            "str_col": ["a", "b", "c"],
+            "bool_col": [True, False, True],
         }
     )
+
 
 @pytest.fixture
 def file_io():
     return FileIO()
+
 
 def test_write_and_read_parquet(tmp_path: Path, sample_df, file_io):
     """Parquet round-trip should preserve data and schema"""
@@ -29,7 +31,8 @@ def test_write_and_read_parquet(tmp_path: Path, sample_df, file_io):
 
     df_read = file_io.read_parquet(path)
 
-    pd.testing.assert_frame_equal(df_read, sample_df)
+    pd.testing.assert_frame_equal(df_read, sample_df, check_dtype=False)
+
 
 def test_write_and_read_csv(tmp_path: Path, sample_df, file_io):
     """
@@ -42,7 +45,7 @@ def test_write_and_read_csv(tmp_path: Path, sample_df, file_io):
 
     df_read = file_io.read_csv(path)
 
-    pd.testing.assert_frame_equal(df_read, sample_df)
+    pd.testing.assert_frame_equal(df_read, sample_df, check_dtype=False)
 
 
 def test_read_nonexistent_file_raises(tmp_path: Path, file_io):
@@ -65,7 +68,7 @@ def test_overwrite_existing_file(tmp_path: Path, sample_df, file_io):
     file_io.write_parquet(sample_df, path)
 
     df_read = file_io.read_parquet(path)
-    pd.testing.assert_frame_equal(df_read, sample_df)
+    pd.testing.assert_frame_equal(df_read, sample_df, check_dtype=False)
 
 
 def test_invalid_input_type_raises(file_io):

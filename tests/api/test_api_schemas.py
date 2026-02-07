@@ -37,7 +37,7 @@ def valid_customer_dict():
 def test_customer_input_accepts_valid_data(valid_customer_dict):
     """Valid customer data should be accepted."""
     customer = CustomerInput(**valid_customer_dict)
-    
+
     assert customer.CreditScore == 650
     assert customer.Geography == "France"
 
@@ -57,9 +57,9 @@ def test_customer_input_normalizes_cardtype():
         "EstimatedSalary": 75000.0,
         "CardType": "GOLD",  # Uppercase
     }
-    
+
     customer = CustomerInput(**data)
-    
+
     assert customer.CardType == "Gold"
 
 
@@ -78,16 +78,16 @@ def test_customer_input_normalizes_geography():
         "EstimatedSalary": 75000.0,
         "CardType": "Gold",
     }
-    
+
     customer = CustomerInput(**data)
-    
+
     assert customer.Geography == "France"
 
 
 def test_customer_input_rejects_invalid_creditscore(valid_customer_dict):
     """Credit score outside 300-850 should fail validation."""
     valid_customer_dict["CreditScore"] = 200  # Below 300
-    
+
     with pytest.raises(ValidationError):
         CustomerInput(**valid_customer_dict)
 
@@ -95,7 +95,7 @@ def test_customer_input_rejects_invalid_creditscore(valid_customer_dict):
 def test_customer_input_rejects_creditscore_above_max(valid_customer_dict):
     """Credit score above 850 should fail validation."""
     valid_customer_dict["CreditScore"] = 900
-    
+
     with pytest.raises(ValidationError):
         CustomerInput(**valid_customer_dict)
 
@@ -103,7 +103,7 @@ def test_customer_input_rejects_creditscore_above_max(valid_customer_dict):
 def test_customer_input_rejects_invalid_geography(valid_customer_dict):
     """Invalid geography should fail validation."""
     valid_customer_dict["Geography"] = "Italy"
-    
+
     with pytest.raises(ValidationError):
         CustomerInput(**valid_customer_dict)
 
@@ -111,7 +111,7 @@ def test_customer_input_rejects_invalid_geography(valid_customer_dict):
 def test_customer_input_rejects_invalid_gender(valid_customer_dict):
     """Invalid gender should fail validation."""
     valid_customer_dict["Gender"] = "Other"
-    
+
     with pytest.raises(ValidationError):
         CustomerInput(**valid_customer_dict)
 
@@ -119,7 +119,7 @@ def test_customer_input_rejects_invalid_gender(valid_customer_dict):
 def test_customer_input_rejects_invalid_cardtype(valid_customer_dict):
     """Invalid card type should fail validation."""
     valid_customer_dict["CardType"] = "Bronze"
-    
+
     with pytest.raises(ValidationError):
         CustomerInput(**valid_customer_dict)
 
@@ -127,7 +127,7 @@ def test_customer_input_rejects_invalid_cardtype(valid_customer_dict):
 def test_customer_input_rejects_negative_balance(valid_customer_dict):
     """Negative balance should fail validation."""
     valid_customer_dict["Balance"] = -1000.0
-    
+
     with pytest.raises(ValidationError):
         CustomerInput(**valid_customer_dict)
 
@@ -135,7 +135,7 @@ def test_customer_input_rejects_negative_balance(valid_customer_dict):
 def test_customer_input_rejects_invalid_age(valid_customer_dict):
     """Age outside 10-100 range should fail."""
     valid_customer_dict["Age"] = 5
-    
+
     with pytest.raises(ValidationError):
         CustomerInput(**valid_customer_dict)
 
@@ -171,10 +171,8 @@ def test_batch_request_requires_at_least_one_customer(valid_customer_dict):
 
 def test_batch_request_accepts_valid_customers(valid_customer_dict):
     """Batch request should accept valid customer list."""
-    request = BatchPredictionRequest(
-        customers=[CustomerInput(**valid_customer_dict)]
-    )
-    
+    request = BatchPredictionRequest(customers=[CustomerInput(**valid_customer_dict)])
+
     assert len(request.customers) == 1
 
 
@@ -182,7 +180,7 @@ def test_batch_request_accepts_valid_customers(valid_customer_dict):
 def test_topk_request_optional_fields():
     """TopKRequest fields should be optional."""
     request = TopKRequest()
-    
+
     assert request.k is None
     assert request.k_percent is None
 
