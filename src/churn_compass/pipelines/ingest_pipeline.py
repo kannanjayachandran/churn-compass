@@ -16,9 +16,16 @@ from typing import Optional
 import pandas as pd
 from prefect import flow, task
 
-from churn_compass import settings, setup_logger, log_execution_time, set_run_context, generate_run_id
+from churn_compass import (
+    settings,
+    setup_logger,
+    log_execution_time,
+    set_run_context,
+    generate_run_id,
+)
 from churn_compass.io import FileIO, DatabaseIO
 from churn_compass.validation import validate_raw_data, detect_leakage_columns
+from churn_compass.utils import normalize_dataframe
 
 
 logger = setup_logger(__name__)
@@ -115,7 +122,7 @@ def clean_data(df: pd.DataFrame, drop_nulls: bool = True) -> pd.DataFrame:
         if n_nulls:
             logger.warning("Dropping rows with nulls", extra={"null_cells": n_nulls})
             df = df.dropna()
-    
+
     logger.info(
         "Data cleaning completed",
         extra={
@@ -145,7 +152,7 @@ def load_processed_data(df: pd.DataFrame, output_path: str) -> str:
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
     # Write to Parquet with Snappy compression
-    file_io.write_parquet(df, output_path, compression="snappy")
+    file_io.write_parquet(df, output_path)
 
     output_path_obj = Path(output_path).absolute()
     file_size_mb = output_path_obj.stat().st_size / (1024**2)
@@ -162,14 +169,12 @@ def load_processed_data(df: pd.DataFrame, output_path: str) -> str:
 
     return str(output_path_obj.resolve())
 
-from churn_compass.utils.normalization import normalize_dataframe
 
 # utility
 def normalize_card_type(df: pd.DataFrame) -> pd.DataFrame:
     """Normalize CardType column and handle mapping from Card Type"""
     return normalize_dataframe(
-        df, 
-        column_mapping={"Card Type": "CardType"}
+        df, column_mapping={"Card Type": "CardType", "Point Earned": "PointEarned"}
     )
 
 
@@ -194,7 +199,6 @@ def data_ingestion_flow(
     run_id = generate_run_id("ingestion")
     set_run_context(run_id, stage="ingestion")
     settings.setup()
-    
 
     if input_path is None:
         input_path = str(settings.data_raw_dir / "Customer-Churn-Records.csv")

@@ -27,6 +27,7 @@ Churn Compass predicts **which customers are most likely to churn**, enabling ta
 | **React UI**                  | Dashboard for predictions and SHAP                   |
 | **DuckDB + Postgres**         | Local development + production RDBMS                 |
 | **Cobra CLI**                 | Command-line interface to build, deploy and run Churn Compass with Docker         |
+| **Slack data drift alerts**     | Notifications on data drift and model performance degradation       |
 
 ---
 
@@ -110,7 +111,8 @@ This project supports **synthetic data generation** for:
 Generate sample data:
 
 ```bash
-python scripts/create_sample_data.py
+python3 scripts/create_sample_data.py --input data/raw/Customer-Churn-Records.csv --base-rows 1000 --drift-rows 500
+
 ```
 
 ---

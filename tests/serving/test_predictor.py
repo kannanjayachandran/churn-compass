@@ -27,10 +27,7 @@ class DummyModel(BaseEstimator, ClassifierMixin):
 
 @pytest.fixture
 def dummy_pipeline():
-    return Pipeline([
-        ("model", DummyModel())
-    ])
-
+    return Pipeline([("model", DummyModel())])
 
 
 @pytest.fixture

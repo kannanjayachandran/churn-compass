@@ -47,7 +47,7 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
         """
         if input_features is None:
             return np.array([])
-        
+
         # Features added by transform()
         engineered = [
             "balance_per_product",
@@ -107,11 +107,7 @@ BASE_NUMERIC_FEATURES = [
     "IsActiveMember",
 ]
 
-BASE_CATEGORICAL_FEATURES = [
-    "Geography",
-    "Gender",
-    "CardType"
-]
+BASE_CATEGORICAL_FEATURES = ["Geography", "Gender", "CardType"]
 
 ENGINEERED_NUMERIC_FEATURES = [
     "balance_per_product",
@@ -230,7 +226,7 @@ def prepare_data_for_training(
             "feature_count": X_transformed.shape[1],
             "pipeline_fitted": fitted,
             "churn_rate": float(y.mean()),
-            "feature_names": feature_names, 
+            "feature_names": feature_names,
         },
     )
 

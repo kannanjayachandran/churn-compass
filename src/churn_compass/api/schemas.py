@@ -35,16 +35,16 @@ class CustomerInput(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "CreditScore": 650, 
-                "Geography": "Germany", 
-                "Gender": "Female", 
-                "Age": 46, 
-                "Tenure": 4, 
-                "Balance": 100_000.0, 
-                "NumOfProducts": 3, 
-                "HasCrCard": 1, 
-                "IsActiveMember": 0, 
-                "EstimatedSalary": 80000.0, 
+                "CreditScore": 650,
+                "Geography": "Germany",
+                "Gender": "Female",
+                "Age": 46,
+                "Tenure": 4,
+                "Balance": 100_000.0,
+                "NumOfProducts": 3,
+                "HasCrCard": 1,
+                "IsActiveMember": 0,
+                "EstimatedSalary": 80000.0,
                 "CardType": "Diamond",
             }
         }
@@ -54,7 +54,7 @@ class CustomerInput(BaseModel):
 # Prediction Schemas
 class PredictionResponse(BaseModel):
     """Single prediction response."""
-    
+
     prediction: int
     probability: float
     risk_level: Literal["low", "medium", "high"]
@@ -110,7 +110,7 @@ class TopKResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: Literal["healthy", "unhealthy"]
     model_loaded: bool
-    timestamp: str 
+    timestamp: str
     version: str
 
 
@@ -132,4 +132,3 @@ class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None
     timestamp: str
-    

@@ -9,7 +9,6 @@ from evidently.presets import DataDriftPreset
 
 from churn_compass import settings, setup_logger
 from churn_compass.modeling import calculate_all_metrics
-from churn_compass.io import FileIO
 
 logger = setup_logger(__name__)
 
@@ -38,7 +37,8 @@ class DriftDetector:
 
         if feature_columns is None:
             self.feature_columns = [
-                c for c in reference_data.columns
+                c
+                for c in reference_data.columns
                 if c not in {self.target_col, "prediction", self.prediction_col}
             ]
         else:
@@ -46,8 +46,12 @@ class DriftDetector:
 
         self.reference_data = reference_data[self.feature_columns].copy()
 
-        numeric_cols = self.reference_data.select_dtypes(include=["int64", "float64"]).columns.tolist()
-        categorical_cols = self.reference_data.select_dtypes(include=["object", "category"]).columns.tolist()
+        numeric_cols = self.reference_data.select_dtypes(
+            include=["int64", "float64"]
+        ).columns.tolist()
+        categorical_cols = self.reference_data.select_dtypes(
+            include=["object", "category"]
+        ).columns.tolist()
 
         self.reference_schema = DataDefinition(
             numerical_columns=numeric_cols,
@@ -67,12 +71,18 @@ class DriftDetector:
         current_data: pd.DataFrame,
         drift_threshold: float = 0.5,
     ) -> Dict[str, Any]:
-        logger.info("Detecting data drift", extra={"current_samples": len(current_data)})
+        logger.info(
+            "Detecting data drift", extra={"current_samples": len(current_data)}
+        )
 
         current_data = current_data[self.feature_columns]
 
-        numeric_cols = current_data.select_dtypes(include=["int64", "float64"]).columns.tolist()
-        categorical_cols = current_data.select_dtypes(include=["object", "category"]).columns.tolist()
+        numeric_cols = current_data.select_dtypes(
+            include=["int64", "float64"]
+        ).columns.tolist()
+        categorical_cols = current_data.select_dtypes(
+            include=["object", "category"]
+        ).columns.tolist()
 
         current_schema = DataDefinition(
             numerical_columns=numeric_cols,
@@ -82,9 +92,9 @@ class DriftDetector:
         reference_ds = Dataset.from_pandas(self.reference_data, self.reference_schema)
         current_ds = Dataset.from_pandas(current_data, current_schema)
 
-        report = Report([
-            DataDriftPreset(columns=self.feature_columns, drift_share=drift_threshold)
-        ])
+        report = Report(
+            [DataDriftPreset(columns=self.feature_columns, drift_share=drift_threshold)]
+        )
 
         eval_report = report.run(current_data=current_ds, reference_data=reference_ds)
         metrics = eval_report.dict().get("metrics", [])
@@ -96,7 +106,10 @@ class DriftDetector:
             eval_report.save_html(html_path)
             eval_report.save_json(json_path)
 
-            logger.info("Reports saved successfully.", extra={"json_path": json_path, "html_path": html_path})
+            logger.info(
+                "Reports saved successfully.",
+                extra={"json_path": json_path, "html_path": html_path},
+            )
         except Exception:
             logger.error("Saving report failed", exc_info=True)
 
@@ -111,7 +124,11 @@ class DriftDetector:
             if column is None and isinstance(value, dict):
                 dataset_drift_count = value.get("count", 0)
                 dataset_drift_share = value.get("share", 0.0)
-            elif column and isinstance(value, (float, int)) and value > COLUMN_DRIFT_BASELINE:
+            elif (
+                column
+                and isinstance(value, (float, int))
+                and value > COLUMN_DRIFT_BASELINE
+            ):
                 drifted_columns[column] = float(value)
 
         result = {
@@ -135,7 +152,8 @@ class DriftDetector:
         cur_mean = current_predictions.mean()
 
         result = {
-            "prediction_drift_detected": abs(cur_mean - ref_mean) > settings.prediction_drift_threshold,
+            "prediction_drift_detected": abs(cur_mean - ref_mean)
+            > settings.prediction_drift_threshold,
             "reference_mean": float(ref_mean),
             "current_mean": float(cur_mean),
             "mean_shift": float(cur_mean - ref_mean),
@@ -155,7 +173,9 @@ class DriftDetector:
 
         for col in (self.target_col, self.prediction_col):
             if col not in current_data.columns:
-                raise ValueError(f"Missing column '{col}' for performance drift detection")
+                raise ValueError(
+                    f"Missing column '{col}' for performance drift detection"
+                )
 
         ref_metrics = calculate_all_metrics(
             reference_data[self.target_col].to_numpy(),
@@ -169,8 +189,10 @@ class DriftDetector:
 
         drops = {
             "pr_auc": ref_metrics["pr_auc"] - cur_metrics["pr_auc"],
-            "precision_at_k": ref_metrics["top_precision_at_k"] - cur_metrics["top_precision_at_k"],
-            "recall_at_k": ref_metrics["top_recall_at_k"] - cur_metrics["top_recall_at_k"],
+            "precision_at_k": ref_metrics["top_precision_at_k"]
+            - cur_metrics["top_precision_at_k"],
+            "recall_at_k": ref_metrics["top_recall_at_k"]
+            - cur_metrics["top_recall_at_k"],
         }
 
         degraded = any(v > threshold for v in drops.values())

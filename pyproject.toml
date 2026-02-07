@@ -1,10 +1,11 @@
 [project]
 name = "churn-compass"
 version = "0.1.0"
-description = "Add your description here"
+description = "A production-grade end-to-end ML system for predicting customer churn in retail banking."
 readme = "README.md"
 authors = [
-    { name = "Interstellar01-glitch", email = "kannanjayachandran88@gmail.com" }
+    { name = "Interstellar01-glitch", email = "kannanjayachandran88@gmail.com" }, 
+    {name = "Kannan Jayachandran", email = "kannanjayachandran16@gmail.com"},
 ]
 requires-python = ">=3.13"
 dependencies = [
@@ -25,6 +26,7 @@ dependencies = [
     "uvicorn[standard]>=0.38.0",
     "xgboost>=3.1.2",
     "psutil>=6.0.0",
+    "pyarrow>=22.0.0",
 ]
 
 [project.scripts]

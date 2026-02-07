@@ -24,7 +24,7 @@ logger = setup_logger(__name__)
 def validate_data_quality(data_path: str) -> None:
     """
     Docstring for validate_data_quality
-    
+
     :param data_path: Description
     :type data_path: str
     :return: Description
@@ -45,12 +45,13 @@ def validate_data_quality(data_path: str) -> None:
 
     logger.info("Data quality validation passed")
 
+
 @task(name="train_baseline_model", retries=1)
 @log_execution_time(logger)
 def train_baseline_model(data_path: str, experiment_name: Optional[str] = None) -> Dict:
     """
     Docstring for train_baseline_model
-    
+
     :param data_path: Description
     :type data_path: str
     :param experiment_name: Description
@@ -60,21 +61,24 @@ def train_baseline_model(data_path: str, experiment_name: Optional[str] = None) 
     """
     logger.info("Training baseline model", extra={"experiment_name": experiment_name})
     results = train_and_evaluate(
-        data_path=data_path, 
-        experiment_name=experiment_name, 
-        run_name="baseline_model", 
-        params=None, 
-        register_model=False
+        data_path=data_path,
+        experiment_name=experiment_name,
+        run_name="baseline_model",
+        params=None,
+        register_model=False,
     )
 
     return results
 
+
 @task(name="hyperparameter_tuning", retries=1)
 @log_execution_time(logger)
-def hyperparameter_tuning(data_path: str, n_trials: int = 50, experiment_name: Optional[str] = None) -> Dict:
+def hyperparameter_tuning(
+    data_path: str, n_trials: int = 50, experiment_name: Optional[str] = None
+) -> Dict:
     """
     Docstring for hyperparameter_tuning
-    
+
     :param data_path: Description
     :type data_path: str
     :param n_trials: Description
@@ -87,42 +91,40 @@ def hyperparameter_tuning(data_path: str, n_trials: int = 50, experiment_name: O
     logger.info("Starting hyperparameter tuning", extra={"n_trials": n_trials})
 
     best_params, study = optimize_hyperparameters(
-        data_path=data_path, 
-        n_trials=n_trials, 
+        data_path=data_path,
+        n_trials=n_trials,
     )
 
     return {
-        "best_params": best_params, 
-        "best_objective": study.best_value, 
-        "best_trial": study.best_trial.number
+        "best_params": best_params,
+        "best_objective": study.best_value,
+        "best_trial": study.best_trial.number,
     }
+
 
 @task(name="train_optimized_model", retries=1)
 @log_execution_time(logger)
 def train_optimized_model(
-    data_path: str, 
-    best_params: Optional[Dict], 
-    experiment_name: Optional[str], 
-    register_model: bool = True
+    data_path: str,
+    best_params: Optional[Dict],
+    experiment_name: Optional[str],
+    register_model: bool = True,
 ) -> Dict:
-    logger.info("Training optimized model", 
-                extra={
-                    "using_defaults": best_params is None
-                })
-    
-    return train_and_evaluate(
-        data_path=data_path, 
-        experiment_name=experiment_name, 
-        run_name="optimized_model", 
-        params=best_params if best_params else {}, 
-        register_model=register_model
+    logger.info(
+        "Training optimized model", extra={"using_defaults": best_params is None}
     )
 
+    return train_and_evaluate(
+        data_path=data_path,
+        experiment_name=experiment_name,
+        run_name="optimized_model",
+        params=best_params if best_params else {},
+        register_model=register_model,
+    )
+
+
 @task(name="create_training_summary")
-def create_training_summary(
-    baseline_results: Dict,
-    optimized_results: Dict
-) -> str:
+def create_training_summary(baseline_results: Dict, optimized_results: Dict) -> str:
     baseline_test = baseline_results["metrics"]["test"]
     optimized_test = optimized_results["metrics"]["test"]
 
@@ -132,29 +134,30 @@ def create_training_summary(
 # Churn Compass Training Summary
 
 ## Performance
-- **Baseline PR-AUC**: {baseline_test['pr_auc']:.4f}
-- **Optimized PR-AUC**: {optimized_test['pr_auc']:.4f} ({pr_auc_improvement:+.4f})
+- **Baseline PR-AUC**: {baseline_test["pr_auc"]:.4f}
+- **Optimized PR-AUC**: {optimized_test["pr_auc"]:.4f} ({pr_auc_improvement:+.4f})
 """
 
     importance_df = optimized_results.get("feature_importance")
     if importance_df is not None and not importance_df.empty:
         markdown += "\n## Top Features\n"
         for i, row in importance_df.head(5).iterrows():
-            markdown += f"\n{i+1}. **{row['feature']}**: {row['importance']:.4f}"
+            markdown += f"\n{i + 1}. **{row['feature']}**: {row['importance']:.4f}"
 
     return markdown
 
+
 @flow(
-    name="model_training", 
-    description="Complete model training workflow with hyperparameter optimization", 
-    log_prints=True 
+    name="model_training",
+    description="Complete model training workflow with hyperparameter optimization",
+    log_prints=True,
 )
 def training_flow(
-    data_path: str, 
-    skip_tuning: bool = False, 
-    n_trials: int = 50, 
-    register_model: bool = True, 
-    experiment_name: Optional[str] = None
+    data_path: str,
+    skip_tuning: bool = False,
+    n_trials: int = 50,
+    register_model: bool = True,
+    experiment_name: Optional[str] = None,
 ) -> Dict:
     """
     Docstring for training_flow
@@ -165,7 +168,7 @@ def training_flow(
     3. Hyperparameter tuning (optional)
     4. Train optimized model
     5. Generate summary report
-    
+
     :param data_path: Description
     :type data_path: str
     :param skip_tuning: Description
@@ -180,12 +183,12 @@ def training_flow(
     :rtype: Dict[Any, Any]
     """
     logger.info(
-        "Starting training flow", 
+        "Starting training flow",
         extra={
-            "data_path": data_path, 
-            "skip_tuning": skip_tuning, 
-            "n_trials": n_trials
-        }
+            "data_path": data_path,
+            "skip_tuning": skip_tuning,
+            "n_trials": n_trials,
+        },
     )
 
     if experiment_name is None:
@@ -201,44 +204,44 @@ def training_flow(
     if skip_tuning:
         logger.info("Skipping hyperparameter tuning (using defaults)")
         optimized_results = train_optimized_model(
-            data_path, 
-            best_params=None, 
-            experiment_name=experiment_name, 
-            register_model=register_model
+            data_path,
+            best_params=None,
+            experiment_name=experiment_name,
+            register_model=register_model,
         )
         tuning_results = None
     else:
         tuning_results = hyperparameter_tuning(data_path, n_trials, experiment_name)
         optimized_results = train_optimized_model(
-            data_path, 
-            best_params=tuning_results['best_params'], 
-            experiment_name=experiment_name, 
-            register_model=register_model
+            data_path,
+            best_params=tuning_results["best_params"],
+            experiment_name=experiment_name,
+            register_model=register_model,
         )
-    
+
     # 5. Create summary
     summary_markdown = create_training_summary(baseline_results, optimized_results)
 
     # Create Prefect artifact
     create_markdown_artifact(
-        key="training-summary", 
-        markdown=summary_markdown, 
-        description="Model training performance summary"
+        key="training-summary",
+        markdown=summary_markdown,
+        description="Model training performance summary",
     )
 
     # Log summary
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print(summary_markdown)
-    print("="*80 + "\n")
-    
+    print("=" * 80 + "\n")
+
     results = {
-        'baseline_results': baseline_results,
-        'tuning_results': tuning_results,
-        'optimized_results': optimized_results,
-        'final_run_id': optimized_results['run_id'],
-        'model_registered': register_model
+        "baseline_results": baseline_results,
+        "tuning_results": tuning_results,
+        "optimized_results": optimized_results,
+        "final_run_id": optimized_results["run_id"],
+        "model_registered": register_model,
     }
-    
+
     logger.info("Training flow completed successfully")
 
     return results
@@ -247,52 +250,37 @@ def training_flow(
 def main():
     """CLI"""
     parser = argparse.ArgumentParser(description="Model training flow")
+    parser.add_argument("--data", type=str, required=True, help="Path to training data")
     parser.add_argument(
-        "--data", 
-        type=str, 
-        required=True, 
-        help="Path to training data"
+        "--skip-tuning", action="store_true", help="Skip hyperparameter tuning"
     )
     parser.add_argument(
-        "--skip-tuning", 
-        action="store_true", 
-        help="Skip hyperparameter tuning"
+        "--trials", type=int, default=50, help="Number of Optuna trials"
     )
     parser.add_argument(
-        "--trials", 
-        type=int, 
-        default=50, 
-        help="Number of Optuna trials"
+        "--no-register", action="store_true", help="Don't register model in MLflow"
     )
     parser.add_argument(
-        "--no-register", 
-        action="store_true", 
-        help="Don't register model in MLflow"
-    )
-    parser.add_argument(
-        "--experiment", 
-        type=str, 
-        default=None, 
-        help="MLflow experiment name"
+        "--experiment", type=str, default=None, help="MLflow experiment name"
     )
 
     args = parser.parse_args()
 
     try:
         results = training_flow(
-            data_path=args.data, 
-            skip_tuning=args.skip_tuning, 
-            n_trials=args.trials, 
-            register_model=not args.no_register, 
-            experiment_name=args.experiment
+            data_path=args.data,
+            skip_tuning=args.skip_tuning,
+            n_trials=args.trials,
+            register_model=not args.no_register,
+            experiment_name=args.experiment,
         )
 
         print(f"Training completed. Final run ID: {results['final_run_id']}")
 
     except Exception as e:
         logger.error("Training flow failed", exc_info=True)
-        print(f"Training failed: {str(e)}") 
+        print(f"Training failed: {str(e)}")
+
 
 if __name__ == "__main__":
     main()
-    

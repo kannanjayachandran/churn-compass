@@ -2,13 +2,6 @@
 Churn Compass - Database I/O Layer
 
 PostgreSQL for production, DuckDB for local development.
-
-Features:
-- PostgreSQL connection management with SQLAlchemy
-- Read queries to DataFrame
-- Execute DDL/DML statements
-- DuckDB fallback for local development
-- Connection pooling and error handling
 """
 
 from typing import Optional, Literal, cast
@@ -189,11 +182,11 @@ class DatabaseIO:
             raise
 
     def write_table(
-            self, 
-            df: pd.DataFrame, 
-            table_name: str, 
-            if_exists: Literal["replace", "append", "fail"] = "replace", 
-            index: bool = False, 
+        self,
+        df: pd.DataFrame,
+        table_name: str,
+        if_exists: Literal["replace", "append", "fail"] = "replace",
+        index: bool = False,
     ) -> None:
         """
         Write DataFrame to database table.
@@ -205,30 +198,30 @@ class DatabaseIO:
         :param df: DataFrame to persist
         :param table_name: Target table name
         :param if_exists: 'replace' | 'append' | 'fail'
-        :param index: Whether to write index        
+        :param index: Whether to write index
         """
         try:
             logger.info(
-                "Writing DataFrame to table", 
+                "Writing DataFrame to table",
                 extra={
-                    "db_type": self.db_type, 
-                    "table": table_name, 
-                    "rows": len(df), 
-                    "if_exists": if_exists, 
-                }, 
+                    "db_type": self.db_type,
+                    "table": table_name,
+                    "rows": len(df),
+                    "if_exists": if_exists,
+                },
             )
 
             if self.db_type == "postgres":
                 with self.get_connection() as conn:
                     sa_conn = cast(Connection, conn)
                     df.to_sql(
-                        table_name, 
-                        sa_conn, 
-                        if_exists=if_exists, 
-                        index=index, 
-                        method="multi", 
+                        table_name,
+                        sa_conn,
+                        if_exists=if_exists,
+                        index=index,
+                        method="multi",
                     )
-            else: #duckdb
+            else:  # duckdb
                 with self.get_connection() as conn:
                     duck_conn = cast(duckdb.DuckDBPyConnection, conn)
 
@@ -239,25 +232,24 @@ class DatabaseIO:
                     duck_conn.execute(
                         f"CREATE TABLE IF NOT EXISTS {table_name} AS SELECT * FROM tmp_df"
                     )
-                    duck_conn.unregister("tmp_df")     
+                    duck_conn.unregister("tmp_df")
 
             logger.info(
-                "Table write completed", 
-                extra={"table": table_name, "rows_written": len(df)}
-            )  
+                "Table write completed",
+                extra={"table": table_name, "rows_written": len(df)},
+            )
 
         except Exception as e:
             logger.exception(
-                "Failed to write DataFrame to table", 
+                "Failed to write DataFrame to table",
                 extra={
-                    "table": table_name, 
-                    "db_type": self.db_type, 
-                    "error_type": type(e).__name__, 
-                }, 
-                exc_info=True
-            )         
+                    "table": table_name,
+                    "db_type": self.db_type,
+                    "error_type": type(e).__name__,
+                },
+                exc_info=True,
+            )
             raise
-
 
     # Utilities
     def table_exists(self, table_name: str) -> bool:

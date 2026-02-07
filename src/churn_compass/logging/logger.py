@@ -42,15 +42,39 @@ def clear_run_context() -> None:
 
 # Internal constants
 _STANDARD_LOGRECORD_ATTRS = {
-    "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
-    "module", "exc_info", "exc_text", "stack_info", "lineno", "funcName",
-    "created", "msecs", "relativeCreated", "thread", "threadName",
-    "processName", "process",
+    "name",
+    "msg",
+    "args",
+    "levelname",
+    "levelno",
+    "pathname",
+    "filename",
+    "module",
+    "exc_info",
+    "exc_text",
+    "stack_info",
+    "lineno",
+    "funcName",
+    "created",
+    "msecs",
+    "relativeCreated",
+    "thread",
+    "threadName",
+    "processName",
+    "process",
 }
 
 _DEFAULT_PII_FIELDS = {
-    "customerid", "customer_id", "surname", "last_name", "email",
-    "phone", "ssn", "password", "api_key", "token"
+    "customerid",
+    "customer_id",
+    "surname",
+    "last_name",
+    "email",
+    "phone",
+    "ssn",
+    "password",
+    "api_key",
+    "token",
 }
 
 _configured_loggers: set[str] = set()
@@ -58,6 +82,7 @@ _configured_loggers: set[str] = set()
 
 class ContextFilter(logging.Filter):
     """Cleaner way to inject context variables into log records."""
+
     def filter(self, record: logging.LogRecord) -> bool:
         record.run_id = _run_id_ctx.get()
         record.stage = _stage_ctx.get()
@@ -91,6 +116,7 @@ class JSONFormatter(logging.Formatter):
     Optimized JSON formatter for structured logging.
     Produces a flat structure compatible with log aggregation systems.
     """
+
     def __init__(self, include_extra: bool = True):
         super().__init__()
         self.include_extra = include_extra
@@ -98,7 +124,9 @@ class JSONFormatter(logging.Formatter):
     def _prepare_log_dict(self, record: logging.LogRecord) -> Dict[str, Any]:
         # Standard fields with @timestamp for ELK/Datadog compatibility
         log_data = {
-            "@timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "@timestamp": datetime.fromtimestamp(
+                record.created, tz=timezone.utc
+            ).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -120,8 +148,9 @@ class JSONFormatter(logging.Formatter):
         # Add extra fields
         if self.include_extra:
             extra = {
-                k: v for k, v in record.__dict__.items()
-                if k not in _STANDARD_LOGRECORD_ATTRS 
+                k: v
+                for k, v in record.__dict__.items()
+                if k not in _STANDARD_LOGRECORD_ATTRS
                 and not k.startswith("_")
                 and k not in ("run_id", "stage")
             }
@@ -138,11 +167,14 @@ class JSONFormatter(logging.Formatter):
         try:
             return json.dumps(log_dict, default=str, ensure_ascii=False)
         except (TypeError, ValueError):
-            return json.dumps({"error": "Log record serialization failed", "msg": str(record.msg)})
+            return json.dumps(
+                {"error": "Log record serialization failed", "msg": str(record.msg)}
+            )
 
 
 class TextFormatter(logging.Formatter):
     """Human-readable formatter for console output."""
+
     def __init__(self):
         super().__init__(
             fmt="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
@@ -165,7 +197,7 @@ def setup_logger(
 
     log_level = level or settings.log_level
     logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
-    
+
     # Add context filter for all records
     logger.addFilter(ContextFilter())
 
@@ -180,7 +212,7 @@ def setup_logger(
         settings.log_file.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.handlers.RotatingFileHandler(
             settings.log_file,
-            maxBytes=10 * 1024 * 1024, # 10MB
+            maxBytes=10 * 1024 * 1024,  # 10MB
             backupCount=5,
             encoding="utf-8",
         )
@@ -195,6 +227,7 @@ def setup_logger(
 
 def log_execution_time(logger: logging.Logger):
     """Decorator to log function execution time and status."""
+
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
@@ -221,7 +254,9 @@ def log_execution_time(logger: logging.Logger):
                     exc_info=True,
                 )
                 raise
+
         return wrapper
+
     return decorator
 
 

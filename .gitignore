@@ -52,5 +52,8 @@ Thumbs.db
 # SECURITY - ENV FILES
 .env
 
-# Project Specific
+# Project Specific temporaries
 temp
+/cli
+AGENTS.md
+docs/Synthetic_Data_Generation.md

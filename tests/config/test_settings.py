@@ -1,11 +1,14 @@
-import os
 from pathlib import Path
 from datetime import datetime, timezone
 
-import pytest
-from pytest_mock import mocker
 
-from churn_compass.config import settings, PROJECT_ROOT, MLFLOW_DIR, DATA_DIR, generate_run_id
+from churn_compass.config import (
+    settings,
+    PROJECT_ROOT,
+    MLFLOW_DIR,
+    DATA_DIR,
+    generate_run_id,
+)
 
 
 def test_settings_importable():
@@ -52,7 +55,7 @@ def test_top_k_percent_range():
 
 def test_prediction_threshold_range():
     """
-    Prediction threshold must be a valid probability. 
+    Prediction threshold must be a valid probability.
     """
     t = settings.prediction_threshold
 

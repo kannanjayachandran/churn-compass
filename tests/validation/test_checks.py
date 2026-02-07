@@ -14,20 +14,24 @@ from churn_compass.validation.checks import check_class_imbalance, check_data_qu
 def balanced_data():
     """DataFrame with ~20% churn rate (balanced)."""
     # 80 retained, 20 churned = 20% churn
-    return pd.DataFrame({
-        "Exited": [0] * 80 + [1] * 20,
-        "CreditScore": [650] * 100,
-    })
+    return pd.DataFrame(
+        {
+            "Exited": [0] * 80 + [1] * 20,
+            "CreditScore": [650] * 100,
+        }
+    )
 
 
 @pytest.fixture
 def imbalanced_data():
     """DataFrame with 1% churn rate (severe imbalance)."""
     # 99 retained, 1 churned = 1% churn
-    return pd.DataFrame({
-        "Exited": [0] * 99 + [1] * 1,
-        "CreditScore": [650] * 100,
-    })
+    return pd.DataFrame(
+        {
+            "Exited": [0] * 99 + [1] * 1,
+            "CreditScore": [650] * 100,
+        }
+    )
 
 
 def test_check_class_imbalance_passes_balanced_data(balanced_data):
@@ -57,35 +61,41 @@ def test_check_class_imbalance_custom_threshold(balanced_data):
 
 def test_check_data_quality_passes_clean_data():
     """Clean data with no missing values should pass."""
-    df = pd.DataFrame({
-        "A": [1, 2, 3, 4, 5],
-        "B": [1.0, 2.0, 3.0, 4.0, 5.0],
-    })
+    df = pd.DataFrame(
+        {
+            "A": [1, 2, 3, 4, 5],
+            "B": [1.0, 2.0, 3.0, 4.0, 5.0],
+        }
+    )
     # Should not raise
     check_data_quality(df, max_missing_pct=0.05)
 
 
 def test_check_data_quality_fails_excessive_nulls():
     """Data with >5% nulls should fail."""
-    df = pd.DataFrame({
-        "A": [1, None, None, None, 5],  # 60% missing
-        "B": [1.0, 2.0, 3.0, 4.0, 5.0],
-    })
-    
+    df = pd.DataFrame(
+        {
+            "A": [1, None, None, None, 5],  # 60% missing
+            "B": [1.0, 2.0, 3.0, 4.0, 5.0],
+        }
+    )
+
     with pytest.raises(ValueError, match="Missing threshold exceeded"):
         check_data_quality(df, max_missing_pct=0.05)
 
 
 def test_check_data_quality_custom_threshold():
     """Custom missing threshold should be respected."""
-    df = pd.DataFrame({
-        "A": [1, None, 3, 4, 5],  # 20% missing
-        "B": [1.0, 2.0, 3.0, 4.0, 5.0],
-    })
-    
+    df = pd.DataFrame(
+        {
+            "A": [1, None, 3, 4, 5],  # 20% missing
+            "B": [1.0, 2.0, 3.0, 4.0, 5.0],
+        }
+    )
+
     # Should pass at 25% threshold
     check_data_quality(df, max_missing_pct=0.25)
-    
+
     # Should fail at 10% threshold
     with pytest.raises(ValueError):
         check_data_quality(df, max_missing_pct=0.10)
@@ -93,10 +103,12 @@ def test_check_data_quality_custom_threshold():
 
 def test_check_data_quality_handles_duplicates():
     """Data with duplicates should pass quality check (with warning logged)."""
-    df = pd.DataFrame({
-        "A": [1, 1, 2, 3, 4],
-        "B": [1.0, 1.0, 2.0, 3.0, 4.0],
-    })
-    
+    df = pd.DataFrame(
+        {
+            "A": [1, 1, 2, 3, 4],
+            "B": [1.0, 1.0, 2.0, 3.0, 4.0],
+        }
+    )
+
     # Should not raise - duplicates trigger a warning but don't fail
     check_data_quality(df)

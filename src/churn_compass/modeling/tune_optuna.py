@@ -166,12 +166,13 @@ def optimize_hyperparameters(
         completed_trials = [t for t in study.trials if t.state == TrialState.COMPLETE]
 
         if not completed_trials:
-            logger.error("Optuna finished with no successful trials", 
-                         extra={
-                             "n_trials": len(study.trials), 
-                             "states": [t.state.name for t in study.trials], 
-                         }, 
-                         )
+            logger.error(
+                "Optuna finished with no successful trials",
+                extra={
+                    "n_trials": len(study.trials),
+                    "states": [t.state.name for t in study.trials],
+                },
+            )
             raise RuntimeError("All Optuna trials failed or were pruned")
 
         best_params = {
@@ -201,6 +202,7 @@ def optimize_hyperparameters(
         mlflow.log_artifact(str(resolved_output_path))
 
         return best_params, study
+
 
 def main() -> None:
     import argparse

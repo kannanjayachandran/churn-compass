@@ -1,13 +1,12 @@
 """
 Churn Compass - Leakage detection
 
-Detecting leakage columns (No mutation. No validation.)
+Detecting leakage columns
 """
 
 from typing import List, Set
 import pandas as pd
 from churn_compass import settings, setup_logger
-
 
 logger = setup_logger(__name__)
 
@@ -25,7 +24,6 @@ def detect_leakage_columns(df: pd.DataFrame) -> List[str]:
 
     leakage.update(c for c in settings.leakage_columns if c in df.columns)
     leakage.update(c for c in settings.id_columns if c in df.columns)
-    leakage.update(c for c in settings.misleading_columns if c in df.columns)
 
     for col in df.columns:
         if col.startswith(("pred", "shap")):
