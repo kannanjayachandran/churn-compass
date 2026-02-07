@@ -1,0 +1,5 @@
+// nvim madness
+{
+  "venvPath": ".",
+  "venv": ".venv"
+}
