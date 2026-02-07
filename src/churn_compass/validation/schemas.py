@@ -22,6 +22,7 @@ RAW_SCHEMA = DataFrameSchema(
         "HasCrCard": Column(int, checks=Check.isin([0, 1])),
         "IsActiveMember": Column(int, checks=Check.isin([0, 1])),
         "EstimatedSalary": Column(float, checks=[Check.ge(0), Check.le(200_000)]),
+        "PointEarned": Column(int, checks=[Check.ge(0)]),
         "CardType": Column(
             str, checks=Check.isin(["Silver", "Gold", "Diamond", "Platinum"])
         ),
