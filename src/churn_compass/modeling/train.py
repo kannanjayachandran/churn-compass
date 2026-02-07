@@ -106,7 +106,7 @@ def get_default_xgb_params() -> Dict:
         "random_state": settings.random_seed,
         "n_jobs": -1,
         "verbosity": 0,
-        "early_stopping_rounds": 20
+        "early_stopping_rounds": 20,
     }
 
 
@@ -147,9 +147,13 @@ def train_model(
     best_score = getattr(model, "best_score", None)
     logger.info(
         "Model trained",
-        extra={"best_iteration": best_iteration, "best_score": best_score,"n_estimators_used": (
-            best_iteration + 1 if best_iteration is not None else model.n_estimators
-        ),},
+        extra={
+            "best_iteration": best_iteration,
+            "best_score": best_score,
+            "n_estimators_used": (
+                best_iteration + 1 if best_iteration is not None else model.n_estimators
+            ),
+        },
     )
 
     return model
@@ -284,8 +288,8 @@ def train_and_evaluate(
             "pipeline": pipeline,
         }
 
-def main() -> None:
 
+def main() -> None:
     parser = argparse.ArgumentParser(description="Train churn model")
     parser.add_argument(
         "--data",
@@ -306,12 +310,11 @@ def main() -> None:
         help="MLflow run name",
     )
     parser.add_argument(
-    "--params",
-    type=str,
-    default=None,
-    help="Path to JSON file with tuned hyperparameters"
+        "--params",
+        type=str,
+        default=None,
+        help="Path to JSON file with tuned hyperparameters",
     )
-
 
     args = parser.parse_args()
 
@@ -324,7 +327,7 @@ def main() -> None:
         data_path=args.data,
         experiment_name=args.experiment,
         run_name=args.run_name,
-        params=params
+        params=params,
     )
 
 

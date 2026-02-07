@@ -19,52 +19,49 @@ logger = setup_logger(__name__)
 
 class ChurnPredictor:
     """Churn prediction service"""
+
     def __init__(self, model: Optional[Pipeline] = None):
         if model is None:
             loader = get_model_registry()
             self.model: Pipeline = loader.get_latest_production_model()
         else:
             self.model = model
-        
+
         self._explainer: Optional[Any] = None
         logger.info("ChurnPredictor initialized")
 
-    
     # Core Prediction
     def predict_single(
-            self, 
-            customer_data: Dict[str, Union[str, int, float]]
+        self, customer_data: Dict[str, Union[str, int, float]]
     ) -> Dict[str, Any]:
         df = pd.DataFrame([customer_data])
         return self._predict_df(df).iloc[0].to_dict()
-    
+
     def predict_batch(
-            self, 
-            df: pd.DataFrame, 
-            include_features: bool = False
+        self, df: pd.DataFrame, include_features: bool = False
     ) -> pd.DataFrame:
         if df.empty:
             raise ValueError("Empty DataFrame received for prediction")
-        
+
         results = self._predict_df(df)
 
         if include_features:
             results = pd.concat([df.reset_index(drop=True), results], axis=1)
-        
+
         logger.info(
-            "Batch prediction completed", 
+            "Batch prediction completed",
             extra={
-                "rows": len(results), 
+                "rows": len(results),
                 "mean_probability": float(results["probability"].mean()),
-            }
+            },
         )
 
         return results
-    
+
     def _predict_df(self, df: pd.DataFrame) -> pd.DataFrame:
         if not hasattr(self.model, "predict_proba"):
             raise RuntimeError("Loaded model does not support predict_proba")
-        
+
         proba = self.model.predict_proba(df)[:, 1]
         probas = np.clip(proba, 0.0, 1.0)
 
@@ -72,22 +69,22 @@ class ChurnPredictor:
 
         return pd.DataFrame(
             {
-            "probability": probas, 
-            "prediction": (probas >= threshold).astype(int), 
-            "risk_level": self._vectorized_risk_level(probas),
+                "probability": probas,
+                "prediction": (probas >= threshold).astype(int),
+                "risk_level": self._vectorized_risk_level(probas),
             }
         )
-    
+
     # Top-K targeting
     def get_top_k_customers(
-            self, 
-            df: pd.DataFrame, 
-            k: Optional[int] = None,
-            k_percent: Optional[float] = None 
+        self,
+        df: pd.DataFrame,
+        k: Optional[int] = None,
+        k_percent: Optional[float] = None,
     ) -> pd.DataFrame:
         """
         Docstring for get_top_k_customers
-        
+
         :param self: Description
         :param df: Description
         :type df: pd.DataFrame
@@ -111,21 +108,21 @@ class ChurnPredictor:
         top_k = results.nlargest(k, "probability")
 
         logger.info(
-            "Top-K customers identified", 
+            "Top-K customers identified",
             extra={"k": k, "min_prob": float(top_k["probability"].min())},
         )
 
         return top_k
-    
+
     # SHAP explanations
     def explain_prediction(
-            self, 
-            customer_data: Dict[str, Union[str, int, float]], 
-            top_n: int = 10,
-    ) -> Dict[str, Any]: 
+        self,
+        customer_data: Dict[str, Union[str, int, float]],
+        top_n: int = 10,
+    ) -> Dict[str, Any]:
         """
         Docstring for explain_prediction
-        
+
         :param self: Description
         :param customer_data: Description
         :type customer_data: Dict[str, Union[str, int, float]]
@@ -139,7 +136,7 @@ class ChurnPredictor:
         if not settings.enable_shap_explanations:
             logger.info("SHAP explanation disabled in settings")
             return {**prediction, "explanation": "SHAP disabled"}
-        
+
         try:
             df = pd.DataFrame([customer_data])
 
@@ -147,20 +144,22 @@ class ChurnPredictor:
                 self._initialize_explainer()
 
             X = self._transform_for_shap(df)
-            
+
             assert self._explainer is not None
             shap_values = self._explainer.shap_values(X)
 
             if isinstance(shap_values, list):
                 shap_values = shap_values[1]
-            
+
             contributions = shap_values[0]
-            feature_names = self._get_feature_names(X.shape[1], input_features=df.columns.tolist())
+            feature_names = self._get_feature_names(
+                X.shape[1], input_features=df.columns.tolist()
+            )
 
             importance = sorted(
-                zip(feature_names, contributions), 
-                key=lambda x: abs(x[1]), 
-                reverse=True, 
+                zip(feature_names, contributions),
+                key=lambda x: abs(x[1]),
+                reverse=True,
             )[:top_n]
 
             base_value = self._explainer.expected_value
@@ -174,44 +173,44 @@ class ChurnPredictor:
                     base_value = base_value[0]
 
             return {
-                **prediction, 
+                **prediction,
                 "explanation": {
                     "top_features": [
                         {
                             "feature": self._sanitize_feature_name(f),
-                            "contribution": float(v), 
-                            "impact": "increase" if v > 0 else "decrease",  
+                            "contribution": float(v),
+                            "impact": "increase" if v > 0 else "decrease",
                         }
                         for f, v in importance
                     ],
                     "base_value": float(base_value),
                     "prediction_value": float(base_value + sum(contributions)),
-                }
+                },
             }
-        
-        except Exception as e:
+
+        except Exception:
             logger.error("SHAP explanation failed", exc_info=True)
             return {**prediction, "explanation": "Explanation failed"}
-        
+
     def _initialize_explainer(self) -> None:
         """Docstring for _initialize_explainer"""
         logger.info("Initialize SHAP explainer (Lazy Load)")
         import shap
 
         if hasattr(self.model, "named_steps") and "model" in self.model.named_steps:
-            self._explainer = shap.TreeExplainer(
-                self.model.named_steps["model"]
-            )
+            self._explainer = shap.TreeExplainer(self.model.named_steps["model"])
         else:
             raise RuntimeError("Unsupported model type for SHAP")
-        
+
     def _transform_for_shap(self, df: pd.DataFrame) -> np.ndarray:
         if hasattr(self.model, "named_steps"):
             return self.model.named_steps["preprocessing"].transform(df)
-        
+
         return df.values
-    
-    def _get_feature_names(self, n_features: int, input_features: Optional[List[str]] = None) -> List[str]:
+
+    def _get_feature_names(
+        self, n_features: int, input_features: Optional[List[str]] = None
+    ) -> List[str]:
         try:
             preprocessing = self.model.named_steps["preprocessing"]
             # Try standard scikit-learn API first
@@ -219,12 +218,17 @@ class ChurnPredictor:
         except Exception:
             try:
                 # Fallback to our custom extractor which is more robust to nested pipelines
-                from churn_compass.features.feature_engineering_pipeline import extract_feature_names
+                from churn_compass.features.feature_engineering_pipeline import (
+                    extract_feature_names,
+                )
+
                 return extract_feature_names(preprocessing)
             except Exception:
-                logger.warning("All feature name extraction methods failed, using generic names")
+                logger.warning(
+                    "All feature name extraction methods failed, using generic names"
+                )
                 return [f"feature_{i}" for i in range(n_features)]
-        
+
     # Utilities
     @staticmethod
     def _sanitize_feature_name(name: str) -> str:
@@ -232,15 +236,15 @@ class ChurnPredictor:
         # Strip internal prefixes
         for prefix in ["num__", "cat__", "m__"]:
             if name.startswith(prefix):
-                name = name[len(prefix):]
+                name = name[len(prefix) :]
                 break
-        
+
         # Replace underscores with spaces
         name = name.replace("_", " ")
-        
+
         # Split PascalCase/CamelCase (e.g., NumOfProducts -> Num Of Products)
-        name = re.sub(r'([a-z])([A-Z])', r'\1 \2', name)
-        
+        name = re.sub(r"([a-z])([A-Z])", r"\1 \2", name)
+
         # Final formatting: Title Case and strip extra spaces
         return name.title().strip()
 
@@ -249,7 +253,7 @@ class ChurnPredictor:
         return np.select(
             [probabilities >= 0.7, probabilities >= 0.4],
             ["high", "medium"],
-            default="low"
+            default="low",
         )
 
     @staticmethod
