@@ -5,11 +5,12 @@ Central configuration for all project settings.
 Environment variables override defaults via pydantic BaseSettings.
 """
 
+from functools import lru_cache
 from pathlib import Path
-from typing import Optional, Literal
+from typing import Literal, Optional
 
+from pydantic import AnyHttpUrl, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, model_validator, AnyHttpUrl
 
 # Project Paths
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -43,7 +44,7 @@ class Settings(BaseSettings):
     data_processed_dir: Path = DATA_DIR / "processed"
 
     # MLflow
-    mlflow_tracking_uri: str = f"file:{MLFLOW_DIR}"
+    mlflow_tracking_uri: Optional[str] = None
     mlflow_experiment_name: str = "churn_compass"
     mlflow_model_name: str = "churn_compass_xgb"
 
@@ -55,7 +56,7 @@ class Settings(BaseSettings):
     postgres_port: int = 5432
     postgres_database: str = "churn_compass"
     postgres_user: str = "churn_user"
-    postgres_password: str = ""
+    postgres_password: str = Field(default="")
 
     # DuckDB
     duckdb_path: Path = DATA_DIR / "churn_compass.duckdb"
@@ -82,6 +83,7 @@ class Settings(BaseSettings):
     enable_shap_explanations: bool = True
     enable_monitoring: bool = True
     auto_retrain_enabled: bool = False  # Gated
+    enable_docs_in_prod: bool = False
 
     # Schema / Data
     leakage_columns: list[str] = Field(
@@ -94,6 +96,8 @@ class Settings(BaseSettings):
     # API
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    csv_chunk_size: int = 2000
+    cors_origins: list[str] = Field(default_factory=lambda: ["*"])
 
     # logging
     log_level: str = Field(default="INFO")
@@ -117,6 +121,38 @@ class Settings(BaseSettings):
                 raise ValueError(f"{name} must be between 1 and 0")
         return self
 
+    @model_validator(mode="after")
+    def mlflow_defaults(self):
+        if self.mlflow_tracking_uri is None:
+            self.mlflow_tracking_uri = f"file://{MLFLOW_DIR}"
+        return self
+
+    @model_validator(mode="after")
+    def ensure_directories(self):
+        """Auto-create necessary directories on settigns initialization."""
+        directories = [
+            self.data_raw_dir,
+            self.data_processed_dir,
+            ARTIFACT_DIR,
+            MLFLOW_DIR,
+            self.log_file.parent if self.log_file else None,
+        ]
+
+        for directory in filter(None, directories):
+            directory.mkdir(parents=True, exist_ok=True)
+        return self
+
+    @model_validator(mode="after")
+    def validate_production_security(self):
+        """Enforce security requirements in production"""
+        if self.environment == "prod":
+            if not self.postgres_password:
+                raise ValueError(
+                    "Postgres password is required in production."
+                    "Set password in envrionment"
+                )
+        return self
+
     # helpers
     def get_postgres_uri(self) -> str:
         """Generate PostgresSQL connection URI"""
@@ -128,24 +164,13 @@ class Settings(BaseSettings):
             f"/{self.postgres_database}"
         )
 
-    def setup(self) -> None:
-        """Initialize application state (create directories, etc.)"""
-        self._ensure_directories()
 
-    def _ensure_directories(self):
-        """Create necessary directories if they don't exist"""
-        directories = [
-            self.data_raw_dir,
-            self.data_processed_dir,
-            ARTIFACT_DIR,
-            MLFLOW_DIR,
-            self.log_file.parent if self.log_file else None,
-        ]
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    """
+    Lazy loaded singleton settings instance.
 
-        for directory in directories:
-            if directory:
-                directory.mkdir(parents=True, exist_ok=True)
+    settings = get_settings()
 
-
-# Global singleton instance
-settings = Settings()
+    """
+    return Settings()
