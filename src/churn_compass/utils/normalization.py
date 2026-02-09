@@ -10,8 +10,6 @@ from typing import List, Optional
 
 def normalize_string(value: str) -> str:
     """Normalize a single string to Title Case after stripping whitespace."""
-    if not isinstance(value, str):
-        return value
     return value.strip().lower().capitalize()
 
 
