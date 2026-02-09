@@ -4,8 +4,10 @@ Churn Compass - API Schemas
 Pydantic models for request/response validation.
 """
 
-from typing import Optional, List, Dict, Any, Literal
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from typing import Any, Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
 from churn_compass.utils.normalization import normalize_string
 
 
@@ -63,15 +65,15 @@ class PredictionResponse(BaseModel):
 class BatchPredictionRequest(BaseModel):
     """Batch prediction request."""
 
-    customers: List[CustomerInput] = Field(min_length=1, max_length=20000)
-    include_features: bool = False
+    customers: list[CustomerInput] = Field(min_length=1, max_length=20000)
+    include_features: bool = False  # Uses Python's builtin bool now
 
 
 class BatchPredictionResponse(BaseModel):
     """Batch prediction response."""
 
-    predictions: List[PredictionResponse]
-    summary: Dict[str, Any]
+    predictions: list[PredictionResponse]
+    summary: dict[str, Any]
 
 
 # SHAP Explanation Schema
@@ -82,7 +84,7 @@ class FeatureContribution(BaseModel):
 
 
 class SHAPExplanation(BaseModel):
-    top_features: List[FeatureContribution]
+    top_features: list[FeatureContribution]
     base_value: float
     prediction_value: float
 
@@ -101,13 +103,15 @@ class TopKRequest(BaseModel):
 
 
 class TopKResponse(BaseModel):
-    customers: List[Dict[str, Any]]
+    customers: list[dict[str, Any]]
     k: int
     k_percent: float
 
 
 # System Schemas
 class HealthResponse(BaseModel):
+    """Simple health check response."""
+
     status: Literal["healthy", "unhealthy"]
     model_loaded: bool
     timestamp: str
@@ -122,10 +126,22 @@ class VersionResponse(BaseModel):
     mlflow_tracking_uri: str
 
 
-class SystemStatusResponse(HealthResponse):
-    metrics: Dict[str, float]
-    params: Dict[str, Any]
-    system_info: Dict[str, Any]
+class SystemStatusResponse(BaseModel):
+    """
+    Detailed system status response.
+
+    Note: Does NOT inherit from HealthResponse because it has
+    a different status field (includes 'degraded' state).
+    """
+
+    status: Literal["healthy", "degraded", "unhealthy"]
+    model_loaded: bool
+    timestamp: str
+    version: str
+    metrics: dict[str, float]
+    params: dict[str, Any]
+    system_info: dict[str, Any]
+    startup_errors: list[str] = Field(default_factory=list)
 
 
 class ErrorResponse(BaseModel):
