@@ -27,7 +27,7 @@ from sklearn.metrics import (
     confusion_matrix,
 )
 
-from churn_compass import settings, setup_logger
+from churn_compass import get_settings, setup_logger
 
 
 logger = setup_logger(__name__)
@@ -37,6 +37,7 @@ logger = setup_logger(__name__)
 def _resolve_k(n_samples: int, k: Optional[int], k_percent: Optional[float]) -> int:
     if k is not None:
         return max(1, min(k, n_samples))
+    settings = get_settings()
     pct = k_percent if k_percent is not None else settings.top_k_percent
     return max(1, int(n_samples * pct))
 

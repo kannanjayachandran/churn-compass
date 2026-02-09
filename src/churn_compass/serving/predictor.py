@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline
 
-from churn_compass import settings, setup_logger
+from churn_compass import get_settings, setup_logger
 from churn_compass.serving import get_model_registry
 
 logger = setup_logger(__name__)
@@ -21,6 +21,7 @@ class ChurnPredictor:
     """Churn prediction service"""
 
     def __init__(self, model: Optional[Pipeline] = None):
+        self._settings = get_settings()
         if model is None:
             loader = get_model_registry()
             self.model: Pipeline = loader.get_latest_production_model()
@@ -65,7 +66,7 @@ class ChurnPredictor:
         proba = self.model.predict_proba(df)[:, 1]
         probas = np.clip(proba, 0.0, 1.0)
 
-        threshold = settings.prediction_threshold
+        threshold = self._settings.prediction_threshold
 
         return pd.DataFrame(
             {
@@ -96,7 +97,7 @@ class ChurnPredictor:
         :rtype: DataFrame
         """
         if k is None and k_percent is None:
-            k_percent = settings.top_k_percent
+            k_percent = self._settings.top_k_percent
 
         results = self.predict_batch(df, include_features=True)
 
@@ -133,7 +134,7 @@ class ChurnPredictor:
         """
         prediction = self.predict_single(customer_data)
 
-        if not settings.enable_shap_explanations:
+        if not self._settings.enable_shap_explanations:
             logger.info("SHAP explanation disabled in settings")
             return {**prediction, "explanation": "SHAP disabled"}
 

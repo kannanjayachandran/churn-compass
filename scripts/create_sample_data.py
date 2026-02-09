@@ -22,7 +22,7 @@ from scipy import stats
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
-from churn_compass.config.settings import settings
+from churn_compass import get_settings
 from churn_compass.io.file_io import FileIO
 from churn_compass.logging.logger import log_execution_time, setup_logger
 from churn_compass.pipelines.ingest_pipeline import data_ingestion_flow
@@ -613,6 +613,7 @@ def generate_synthetic_data(
     drift_rows: int = 1000,
     skip_pipeline: bool = False,
     output_dir: Optional[str] = None,
+    settings=None,
 ) -> Dict[str, str]:
     logger.info("Synthetic data generator Started")
 
@@ -621,6 +622,10 @@ def generate_synthetic_data(
             raw_dir = Path(output_dir) / "raw"
             processed_dir = Path(output_dir) / "processed"
         else:
+            if settings is None:
+                raise RuntimeError(
+                    "settings factory must be provided when output_dir is not set"
+                )
             raw_dir = Path(settings.data_raw_dir)
             processed_dir = Path(settings.data_processed_dir)
 
@@ -798,6 +803,8 @@ def parse_arguments():
 
 # CLI main
 def main():
+    settings = get_settings()
+
     args = parse_arguments()
 
     logger.info(
@@ -815,6 +822,7 @@ def main():
         drift_rows=args.drift_rows,
         skip_pipeline=args.skip_pipeline,
         output_dir=args.output_dir,
+        settings=settings,
     )
 
     print("\n\n", "=" * 80)

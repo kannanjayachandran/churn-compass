@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from prefect import flow, task
 from prefect.artifacts import create_markdown_artifact
 
-from churn_compass import settings, setup_logger
+from churn_compass import get_settings, setup_logger
 from churn_compass.monitoring import monitoring_flow
 from churn_compass.orchestration import training_flow
 
@@ -121,6 +121,7 @@ def check_manual_approval(decision: Dict, require_approval: bool = True) -> bool
     # - External approval API
 
     # For now, check settings flag
+    settings = get_settings()
     approval_granted = settings.auto_retrain_enabled
 
     logger.info(
@@ -136,6 +137,7 @@ def create_retraining_summary(
     decision: Dict, approved: bool, training_results: Optional[Dict] = None
 ) -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    settings = get_settings()
 
     markdown = f"""
 # Churn Compass Retraining Report

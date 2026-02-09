@@ -13,7 +13,7 @@ from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.engine import Engine, Connection
 from sqlalchemy.sql import Executable
 
-from churn_compass import settings, setup_logger
+from churn_compass import get_settings, setup_logger
 
 
 logger = setup_logger(__name__)
@@ -29,7 +29,8 @@ class DatabaseIO:
     """
 
     def __init__(self, db_type: Optional[str] = None):
-        self.db_type = db_type or settings.db_type
+        self._settings = get_settings()
+        self.db_type = db_type or self._settings.db_type
         self._engine: Optional[Engine] = None
         logger.info("Initializing DatabaseIO", extra={"db_type": self.db_type})
 
@@ -47,7 +48,7 @@ class DatabaseIO:
 
         if self._engine is None:
             try:
-                uri = settings.get_postgres_uri()
+                uri = self._settings.get_postgres_uri()
                 self._engine = create_engine(
                     uri,
                     pool_pre_ping=True,
@@ -87,7 +88,7 @@ class DatabaseIO:
             with self.engine.begin() as conn:
                 yield conn
         else:
-            conn = duckdb.connect(str(settings.duckdb_path))
+            conn = duckdb.connect(str(self._settings.duckdb_path))
             try:
                 yield conn
             finally:
@@ -261,7 +262,7 @@ class DatabaseIO:
                 inspector = inspect(self.engine)
                 return table_name in inspector.get_table_names()
             else:
-                with duckdb.connect(str(settings.duckdb_path)) as conn:
+                with duckdb.connect(str(self._settings.duckdb_path)) as conn:
                     result = conn.execute(
                         "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?",
                         [table_name],

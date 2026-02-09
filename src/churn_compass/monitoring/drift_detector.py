@@ -7,7 +7,7 @@ import mlflow
 from evidently import Dataset, DataDefinition, Report
 from evidently.presets import DataDriftPreset
 
-from churn_compass import settings, setup_logger
+from churn_compass import get_settings, setup_logger
 from churn_compass.modeling import calculate_all_metrics
 
 logger = setup_logger(__name__)
@@ -34,6 +34,7 @@ class DriftDetector:
     ):
         self.target_col = target_col
         self.prediction_col = prediction_col
+        self._settings = get_settings()
 
         if feature_columns is None:
             self.feature_columns = [
@@ -101,8 +102,12 @@ class DriftDetector:
 
         # saving report
         try:
-            html_path = str(settings.monitoring_report_html_output_path / "report.html")
-            json_path = str(settings.monitoring_report_json_output_path / "report.json")
+            html_path = str(
+                self._settings.monitoring_report_html_output_path / "report.html"
+            )
+            json_path = str(
+                self._settings.monitoring_report_json_output_path / "report.json"
+            )
             eval_report.save_html(html_path)
             eval_report.save_json(json_path)
 
@@ -153,7 +158,7 @@ class DriftDetector:
 
         result = {
             "prediction_drift_detected": abs(cur_mean - ref_mean)
-            > settings.prediction_drift_threshold,
+            > self._settings.prediction_drift_threshold,
             "reference_mean": float(ref_mean),
             "current_mean": float(cur_mean),
             "mean_shift": float(cur_mean - ref_mean),
@@ -207,8 +212,8 @@ class DriftDetector:
         return result
 
     def log_to_mlflow(self, results: Dict[str, Any], prefix: str):
-        mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
-        mlflow.set_experiment(f"{settings.mlflow_experiment_name}_monitoring")
+        mlflow.set_tracking_uri(self._settings.mlflow_tracking_uri)
+        mlflow.set_experiment(f"{self._settings.mlflow_experiment_name}_monitoring")
 
         with mlflow.start_run(run_name=f"{prefix}_drift"):
             for k, v in results.items():

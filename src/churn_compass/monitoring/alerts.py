@@ -8,7 +8,7 @@ from enum import Enum
 import json
 import requests
 
-from churn_compass import setup_logger, settings
+from churn_compass import setup_logger, get_settings
 
 logger = setup_logger(__name__)
 
@@ -68,6 +68,7 @@ class AlertManager:
         self.prediction_mean_shift_critical = prediction_mean_shift_critical
         self.performance_drop_warning = performance_drop_warning
         self.performance_drop_critical = performance_drop_critical
+        self._settings = get_settings()
 
         logger.info("AlertManager initialized")
 
@@ -185,7 +186,7 @@ class AlertManager:
         if not alerts:
             return  # Nothing to send
 
-        if not settings.slack_webhook_url:
+        if not self._settings.slack_webhook_url:
             logger.info("Slack webhook not configured, skipping alert delivery")
             return
 
@@ -197,7 +198,7 @@ class AlertManager:
 
             try:
                 response = requests.post(
-                    str(settings.slack_webhook_url),
+                    str(self._settings.slack_webhook_url),
                     json=payload,
                     timeout=5,
                 )

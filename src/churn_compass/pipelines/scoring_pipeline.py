@@ -13,7 +13,7 @@ from typing import Optional, Dict, Literal
 import pandas as pd
 from prefect import flow, task
 
-from churn_compass import settings, setup_logger, log_execution_time
+from churn_compass import get_settings, setup_logger, log_execution_time
 from churn_compass.io import FileIO, DatabaseIO
 from churn_compass.serving import get_model_registry, ChurnPredictor
 
@@ -75,6 +75,7 @@ def score_customers(df: pd.DataFrame, model_stage: str = "Production") -> pd.Dat
     :rtype: DataFrame
     """
     logger.info(f"Scoring {len(df)} customers with {model_stage} model")
+    settings = get_settings()
 
     loader = get_model_registry()
     model = loader.load_by_stage(stage=model_stage)
@@ -116,6 +117,7 @@ def generate_top_k_list(
     :return: Top-K customers DataFrame
     :rtype: DataFrame
     """
+    settings = get_settings()
     if k_percent is None:
         k_percent = settings.top_k_percent
 
@@ -247,7 +249,6 @@ def scoring_flow(
     :return: Description
     :rtype: Dict[Any, Any]
     """
-    settings.setup()
     logger.info(
         "Starting batch scoring flow",
         extra={

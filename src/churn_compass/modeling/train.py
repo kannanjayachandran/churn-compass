@@ -25,13 +25,14 @@ import mlflow.sklearn as ms
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline as SKPipeline
 
-from churn_compass import settings, setup_logger, log_execution_time
+from churn_compass import get_settings, setup_logger, log_execution_time
 from churn_compass.io import FileIO
 from churn_compass.features import prepare_data_for_training
 from churn_compass.modeling import calculate_all_metrics
 
 
 logger = setup_logger(__name__)
+_settings = get_settings()
 
 
 # utility
@@ -67,16 +68,16 @@ def load_and_split_data(
 
     train_val, test = train_test_split(
         df,
-        test_size=settings.test_size,
+        test_size=_settings.test_size,
         stratify=df["Exited"],
-        random_state=settings.random_seed,
+        random_state=_settings.random_seed,
     )
 
     train, val = train_test_split(
         train_val,
-        test_size=settings.val_size,
+        test_size=_settings.val_size,
         stratify=train_val["Exited"],
-        random_state=settings.random_seed,
+        random_state=_settings.random_seed,
     )
 
     logger.info(
@@ -103,7 +104,7 @@ def get_default_xgb_params() -> Dict:
         "colsample_bytree": 0.8,
         "min_child_weight": 1,
         "reg_lambda": 1.0,
-        "random_state": settings.random_seed,
+        "random_state": _settings.random_seed,
         "n_jobs": -1,
         "verbosity": 0,
         "early_stopping_rounds": 20,
@@ -226,9 +227,8 @@ def train_and_evaluate(
     :rtype: Dict[Any, Any]
     """
 
-    settings.setup()
-    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
-    mlflow.set_experiment(experiment_name or settings.mlflow_experiment_name)
+    mlflow.set_tracking_uri(_settings.mlflow_tracking_uri)
+    mlflow.set_experiment(experiment_name or _settings.mlflow_experiment_name)
 
     with mlflow.start_run(run_name=run_name) as run:
         mlflow.log_param("data_path", data_path)
@@ -274,7 +274,7 @@ def train_and_evaluate(
         ms.log_model(
             full_pipeline,
             artifact_path="model",
-            registered_model_name=settings.mlflow_model_name
+            registered_model_name=_settings.mlflow_model_name
             if register_model
             else None,
         )

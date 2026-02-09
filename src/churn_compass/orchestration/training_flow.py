@@ -11,7 +11,7 @@ from typing import Optional, Dict
 from prefect import flow, task
 from prefect.artifacts import create_markdown_artifact
 
-from churn_compass import settings, setup_logger, log_execution_time
+from churn_compass import get_settings, setup_logger, log_execution_time
 from churn_compass.modeling import train_and_evaluate, optimize_hyperparameters
 from churn_compass.io import FileIO
 from churn_compass.validation import validate_training_data
@@ -191,6 +191,7 @@ def training_flow(
         },
     )
 
+    settings = get_settings()
     if experiment_name is None:
         experiment_name = settings.mlflow_experiment_name
 

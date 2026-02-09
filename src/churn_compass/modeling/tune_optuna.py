@@ -25,12 +25,13 @@ from optuna.trial import TrialState
 import xgboost as xgb
 import mlflow
 
-from churn_compass import settings, setup_logger, log_execution_time
+from churn_compass import get_settings, setup_logger, log_execution_time
 from churn_compass.modeling import load_and_split_data, joint_objective_optuna
 from churn_compass.features import prepare_data_for_training
 
 
 logger = setup_logger(__name__)
+_settings = get_settings()
 
 
 # search space
@@ -55,7 +56,7 @@ def suggest_params(trial: optuna.Trial) -> Dict:
         "gamma": trial.suggest_float("gamma", 0.0, 5.0),
         "reg_alpha": trial.suggest_float("reg_alpha", 0.0, 2.0),
         "reg_lambda": trial.suggest_float("reg_lambda", 0.0, 2.0),
-        "random_state": settings.random_seed,
+        "random_state": _settings.random_seed,
         "n_jobs": -1,
         "early_stopping_rounds": 20,
         "verbosity": 0,
@@ -140,8 +141,8 @@ def optimize_hyperparameters(
     :return: Description
     :rtype: Tuple[Dict[Any, Any], Any]
     """
-    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
-    mlflow.set_experiment(f"{settings.mlflow_experiment_name}_optuna")
+    mlflow.set_tracking_uri(_settings.mlflow_tracking_uri)
+    mlflow.set_experiment(f"{_settings.mlflow_experiment_name}_optuna")
 
     train_df, val_df, test_df = load_and_split_data(data_path)
 
@@ -151,7 +152,7 @@ def optimize_hyperparameters(
     with mlflow.start_run(run_name="optuna_optimization"):
         study = optuna.create_study(
             direction="maximize",
-            sampler=TPESampler(seed=settings.random_seed),
+            sampler=TPESampler(seed=_settings.random_seed),
         )
 
         objective = OptunaObjective(X_train, y_train, X_val, y_val)
@@ -179,7 +180,7 @@ def optimize_hyperparameters(
             **study.best_params,
             "objective": "binary:logistic",
             "eval_metric": "aucpr",
-            "random_state": settings.random_seed,
+            "random_state": _settings.random_seed,
             "n_jobs": -1,
             "verbosity": 0,
         }
@@ -192,7 +193,7 @@ def optimize_hyperparameters(
         if output_path is not None:
             resolved_output_path = Path(output_path)
         else:
-            resolved_output_path = settings.data_processed_dir / "best_params.json"
+            resolved_output_path = _settings.data_processed_dir / "best_params.json"
 
         resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
 

@@ -20,7 +20,7 @@ Version: 0.1.0
 __version__ = "0.1.0"
 __author__ = "Kannan Jayachandran"
 
-from churn_compass.config.settings import settings
+from churn_compass.config.settings import get_settings
 from churn_compass.config.identifier_gen import (
     generate_run_id,
     generate_customer_uuid,
@@ -36,7 +36,7 @@ from churn_compass.logging.logger import (
 
 
 __all__ = [
-    "settings",
+    "get_settings",
     "setup_logger",
     "log_execution_time",
     "set_run_context",

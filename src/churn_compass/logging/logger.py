@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Set
 from contextvars import ContextVar
 
-from churn_compass import settings
+from churn_compass import get_settings
 
 # Context (pipeline-level metadata)
 _run_id_ctx: ContextVar[Optional[str]] = ContextVar("run_id", default=None)
@@ -195,6 +195,7 @@ def setup_logger(
     if name in _configured_loggers:
         return logger
 
+    settings = get_settings()
     log_level = level or settings.log_level
     logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
 

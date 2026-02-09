@@ -11,7 +11,7 @@ import mlflow
 import mlflow.sklearn as ms
 from sklearn.pipeline import Pipeline
 
-from churn_compass import settings, setup_logger
+from churn_compass import get_settings, setup_logger
 
 logger = setup_logger(__name__)
 
@@ -23,8 +23,9 @@ class ModelRegistry:
         self._model_cache: Dict[str, Pipeline] = {}
         self._metadata_cache: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.Lock()
+        self._settings = get_settings()
 
-        mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
+        mlflow.set_tracking_uri(self._settings.mlflow_tracking_uri)
 
         logger.info("ModelRegistry initialized")
 
@@ -46,7 +47,7 @@ class ModelRegistry:
         :return: sklearn Pipeline
         :rtype: Pipeline
         """
-        model_name = model_name or settings.mlflow_model_name
+        model_name = model_name or self._settings.mlflow_model_name
         cache_key = f"{model_name}:{stage}"
 
         with self._lock:

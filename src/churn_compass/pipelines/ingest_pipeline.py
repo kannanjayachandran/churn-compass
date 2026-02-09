@@ -17,7 +17,7 @@ import pandas as pd
 from prefect import flow, task
 
 from churn_compass import (
-    settings,
+    get_settings,
     setup_logger,
     log_execution_time,
     set_run_context,
@@ -196,6 +196,7 @@ def data_ingestion_flow(
     :return: Path to processed Parquet file
     :rtype: Optional[str]
     """
+    settings = get_settings()
     run_id = generate_run_id("ingestion")
     set_run_context(run_id, stage="ingestion")
     settings.setup()
