@@ -4,46 +4,53 @@ Churn Compass - File I/O Layer
 Provides consistent interface for reading/writing CSV and Parquet files.
 
 Features:
+- PyArrow backend for performance and memory efficiency
 - Local file operations (CSV, Parquet)
-- DuckDB integration for fast SQL queries during development
+- DuckDB integration for OLAP
 """
 
 from pathlib import Path
-from typing import Optional, Union, List, Literal
-import pandas as pd
+from typing import List, Literal, Optional, Union
+
 import duckdb
+import pandas as pd
 
-from churn_compass import setup_logger
-
+from churn_compass import get_settings, setup_logger
 
 logger = setup_logger(__name__)
 
 
 class FileIO:
     """
-    Unified interface for reading/writing CSV/Parquet and running DuckDB queries.
+    Unified interface for reading/writing CSV/Parquet with PyArrow optimizations.
 
     Supports:
-    - CSV and Parquet formats
-    - DuckDB for SQL queries
+    - CSV and Parquet formats with PyArrow backend
+    - DuckDB for SQL-based analytics
     """
+
+    def __init__(self):
+        self._settings = get_settings()
 
     # CSV
     def read_csv(
         self, filepath: Union[str, Path], chunk_size: Optional[int] = None, **kwargs
     ) -> Union[pd.DataFrame, pd.io.parsers.TextFileReader]:
         """
-        Read CSV file from local filesystem
+        Read CSV file with PyArrow backend.
 
         :param filepath: Path to CSV file
         :type filepath: Union[str, Path]
-        :param chunk_size: Number of rows per chunk (None for all at once)
+        :param chunk_size: Number of rows per chunk (None for full load)
         :type chunk_size: Optional[int]
         :param **kwargs: Additional arguments passed to pd.read_csv
         :return: Dataframe or TextFileReader for chunked reading
         :rtype: Union[DataFrame, TextFileReader]
+        :raises FileNotFoundError: If file doesn't exist
         """
         filepath = Path(filepath)
+        if not filepath.exists():
+            raise FileNotFoundError(f"CSV file not found: {filepath}")
 
         try:
             logger.info(
@@ -65,7 +72,7 @@ class FileIO:
             )
 
             logger.info(
-                "Loaded CSV successfully",
+                "CSV loaded successfully",
                 extra={
                     "filepath": str(filepath),
                     "rows": len(df),
@@ -87,7 +94,7 @@ class FileIO:
 
     def write_csv(self, df: pd.DataFrame, filepath: Union[str, Path], **kwargs) -> None:
         """
-        Write DataFrame to CSV file
+        Write DataFrame to CSV file.
 
         :param df: DataFrame to write
         :type df: pd.DataFrame
@@ -96,6 +103,7 @@ class FileIO:
         :param kwargs: Additional arguments passed to df.to_csv
         """
         filepath = Path(filepath)
+
         try:
             filepath.parent.mkdir(parents=True, exist_ok=True)
 
@@ -103,7 +111,7 @@ class FileIO:
             df.to_csv(filepath, index=False, **kwargs)
 
             logger.info(
-                "Wrote CSV successfully",
+                "CSV written successfully",
                 extra={
                     "filepath": str(filepath),
                     "rows": len(df),
@@ -112,8 +120,9 @@ class FileIO:
             )
         except Exception as e:
             logger.error(
-                f"Failed to write CSV for file: {str(filepath)}",
+                "Failed to write CSV",
                 extra={
+                    "filepath": str(filepath),
                     "error_type": type(e).__name__,
                 },
                 exc_info=True,
@@ -125,7 +134,7 @@ class FileIO:
         self, filepath: Union[str, Path], columns: Optional[List[str]] = None, **kwargs
     ) -> pd.DataFrame:
         """
-        Read Parquet file
+        Read Parquet file with PyArrow backend.
 
         :param filepath: Path to Parquet file
         :type filepath: Union[str, Path]
@@ -134,8 +143,11 @@ class FileIO:
         :param kwargs: Additional arguments passed to pd.read_parquet
         :return: DataFrame with loaded data
         :rtype: DataFrame
+        :raises FileNotFoundError: If file doesn't exist
         """
         filepath = Path(filepath)
+        if not filepath.exists():
+            raise FileNotFoundError(f"Parquet file not found: {filepath}")
 
         try:
             logger.info(
@@ -153,7 +165,7 @@ class FileIO:
             )
 
             logger.info(
-                "Loaded Parquet successfully",
+                "Parquet loaded successfully",
                 extra={
                     "filepath": str(filepath),
                     "rows": len(df),
@@ -165,8 +177,9 @@ class FileIO:
 
         except Exception as e:
             logger.error(
-                f"Failed to read Parquet for file: {str(filepath)}",
+                "Failed to read Parquet",
                 extra={
+                    "filepath": str(filepath),
                     "error_type": type(e).__name__,
                 },
                 exc_info=True,
@@ -177,7 +190,7 @@ class FileIO:
         self,
         df: pd.DataFrame,
         filepath: Union[str, Path],
-        compression: Literal["snappy", "gzip", "brotli"] = "snappy",
+        compression: Literal["snappy", "gzip", "brotli", "zstd"] = "snappy",
         **kwargs,
     ) -> None:
         """
@@ -188,7 +201,7 @@ class FileIO:
         :param filepath: Destination path
         :type filepath: Union[str, Path]
         :param compression: Compression algorithm (snappy, gzip, brotli)
-        :type compression: str
+        :type compression: Literal["snappy", "gzip", "brotli", "zstd"]
         :param kwargs: Additional arguments passed to df.to_parquet
         """
         filepath = Path(filepath)
@@ -197,7 +210,7 @@ class FileIO:
             filepath.parent.mkdir(parents=True, exist_ok=True)
 
             logger.info(
-                "Writing Parquet to file",
+                "Writing Parquet file",
                 extra={
                     "filepath": str(filepath),
                 },
@@ -212,7 +225,7 @@ class FileIO:
             )
 
             logger.info(
-                "Wrote Parquet successfully",
+                "Parquet written successfully",
                 extra={
                     "filepath": str(filepath),
                     "rows": len(df),
@@ -222,40 +235,35 @@ class FileIO:
             )
         except Exception as e:
             logger.error(
-                f"Failed to write parquet for file: {str(filepath)}",
+                "Failed to write Parquet",
                 extra={
+                    "filepath": str(filepath),
                     "error_type": type(e).__name__,
                 },
                 exc_info=True,
             )
             raise
 
-    def run_internal_analytics_with_duckdb(
+    def query_with_duckdb(
         self, sql: str, files: Optional[dict[str, str]] = None
     ) -> pd.DataFrame:
         """
-        Execute SQL query on local files using DuckDB
+        Execute SQL query on local files using DuckDB.
+
         :param sql: SQL query string
         :type sql: str
         :param files: Dict mapping table names to file paths (optional)
-        :type files: Optional[dict]
-        :return: Query results as DataFrame
+        :type files: Optional[dict[str, str]]
+        :return: Query results as DataFrame with PyArrow backend
         :rtype: DataFrame
-
-        This method is used for system automation and internal analytics (Internal Use Only).
+        :raises ValueError: If invalid table name or unsupported file type
 
         Example:
         >>> io = FileIO()
-        >>> df = io.run_internal_analytics_with_duckdb(
-        ...      "SELECT * FROM customers WHERE churn = 1",
-        ...      files = {"customers": "data/processed/customers.parquet"}
+        >>> df = io.query_with_duckdb(
+        ...      "SELECT * FROM customers WHERE churn_probability > 0.7",
+        ...      files = {"customers": "data/processed/predictions.parquet"}
         ... )
-
-        How it works:
-        - Creates in-memory DuckDB instance
-        - Register local files (csv / parquet) as SQL tables or views
-        - Run an arbitrary SQL query against them
-        - Return a pandas DataFrame with the results
         """
         conn = None
         try:
@@ -280,8 +288,9 @@ class FileIO:
 
                     conn.register(table_name, rel)
 
-            logger.info(f"Executing DuckDB query: {sql[:10]}...")
-            df = conn.execute(sql).fetch_df()
+            logger.info("Executing DuckDB analytics query")
+            result_df = conn.execute(sql).fetch_df()
+            df = pd.DataFrame(result_df).convert_dtypes(dtype_backend="pyarrow")
 
             logger.info(
                 "DuckDB query complete",
@@ -289,8 +298,12 @@ class FileIO:
             )
             return df
 
-        except Exception:
-            logger.error("DuckDB query failed", exc_info=True)
+        except Exception as e:
+            logger.error(
+                "DuckDB query failed",
+                extra={"error_type": type(e).__name__},
+                exc_info=True,
+            )
             raise
 
         finally:
