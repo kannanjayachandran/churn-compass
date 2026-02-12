@@ -4,12 +4,12 @@ Identifier generation utilities for Churn Compass.
 This module provides functions for generating different types of identifiers:
 - Run IDs: For tracking pipeline executions and logging context
 - Customer UUIDs: For persistent, unique customer identification
+- batch UUIDs: UUIDs for tracking batch jobs
 """
 
 import uuid
 from datetime import datetime, timezone
 from typing import Final
-
 
 # Application-specific namespace for deterministic UUID generation
 # This should be generated once and kept constant across the application
