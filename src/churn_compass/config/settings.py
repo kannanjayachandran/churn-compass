@@ -93,6 +93,20 @@ class Settings(BaseSettings):
         default_factory=lambda: ["RowNumber", "CustomerId", "Surname"]
     )
 
+    min_minority_class_pct: float = Field(
+        default=0.05,
+        ge=0.0,
+        le=0.5,
+        description="Minimum acceptable minority class percentage for imbalance check",
+    )
+
+    max_missing_pct: float = Field(
+        default=0.05,
+        ge=0.0,
+        le=1.0,
+        description="Maximum allowed missing value percentage per column",
+    )
+
     # API
     api_host: str = "0.0.0.0"
     api_port: int = 8000
@@ -129,7 +143,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def ensure_directories(self):
-        """Auto-create necessary directories on settigns initialization."""
+        """Auto-create necessary directories on settings initialization."""
         directories = [
             self.data_raw_dir,
             self.data_processed_dir,
