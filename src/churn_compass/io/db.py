@@ -1,37 +1,40 @@
 """
 Churn Compass - Database I/O Layer
 
-PostgreSQL for production, DuckDB for local development.
+PostgreSQL for OLTP, DuckDB for OLAP analytics.
+
+Features:
+    - Handles PyArrow to SQL-compatible dtype conversion.
 """
 
-from typing import Optional, Literal, cast
 from contextlib import contextmanager
+from typing import Literal, Optional, cast
 
-import pandas as pd
 import duckdb
-from sqlalchemy import create_engine, text, inspect
-from sqlalchemy.engine import Engine, Connection
+import pandas as pd
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.sql import Executable
 
 from churn_compass import get_settings, setup_logger
-
 
 logger = setup_logger(__name__)
 
 
 class DatabaseIO:
     """
-    Database operations for PostgreSQL and DuckDB.
+    Database operations with PyArrow optimization.
 
     db_type:
-    - 'postgres': Production PostgreSQL
-    - 'duckdb': Local DuckDB
+    - 'postgres': OLTP
+    - 'duckdb': OLAP
     """
 
     def __init__(self, db_type: Optional[str] = None):
         self._settings = get_settings()
         self.db_type = db_type or self._settings.db_type
         self._engine: Optional[Engine] = None
+
         logger.info("Initializing DatabaseIO", extra={"db_type": self.db_type})
 
     # PostgreSQL
@@ -42,6 +45,7 @@ class DatabaseIO:
 
         :return: SQLAlchemy Engine
         :rtype: Engine
+        :raises ValueError: If db_type is not postgres
         """
         if self.db_type != "postgres":
             raise ValueError("SQLAlchemy engine is only available for postgres")
@@ -81,8 +85,8 @@ class DatabaseIO:
         """
         Context-managed database connection.
 
-        - Postgres: transactional connection
-        - DuckDB: open-per-use to avoid file locking
+        - Postgres: transactional connection with auto-commit
+        - DuckDB: Ephemeral (open-per-use) connection (prevents file locks)
         """
         if self.db_type == "postgres":
             with self.engine.begin() as conn:
@@ -94,8 +98,9 @@ class DatabaseIO:
             finally:
                 conn.close()
 
-    # Read Queries
-    def read_query(self, query: str, params: Optional[dict] = None) -> pd.DataFrame:
+    def read_query(
+        self, query: str, params: Optional[dict] = None, use_pyarrow: bool = True
+    ) -> pd.DataFrame:
         """
         Execute SQL query and return results as DataFrame
 
@@ -103,8 +108,11 @@ class DatabaseIO:
         :type query: str
         :param params: Query parameters
         :type params: Optional[dict]
-        :return: Query results as DF
-        :rtype: DataFrame
+        :param use_pyarrow: Use PyArrow backend for result DataFrame
+        :type use_pyarrow: bool
+        :return: Query results as DataFrame
+        :rtype: pd.DataFrame
+        :raises ValueError: If DuckDB called with params
         """
         try:
             logger.info(
@@ -115,15 +123,25 @@ class DatabaseIO:
             if self.db_type == "postgres":
                 with self.get_connection() as conn:
                     sa_conn = cast(Connection, conn)
-                    df = pd.read_sql(text(query), sa_conn, params=params)
+                    df = pd.read_sql(
+                        text(query),
+                        sa_conn,
+                        params=params,
+                        dtype_backend="pyarrow" if use_pyarrow else "numpy_nullable",
+                    )
 
             else:  # duckdb
                 if params:
-                    raise ValueError("DuckDB does not support named parameters")
+                    raise ValueError("DuckDB does not support parameterized queries")
 
                 with self.get_connection() as conn:
                     duck_conn = cast(duckdb.DuckDBPyConnection, conn)
-                    df = duck_conn.execute(query).fetchdf()
+                    result = duck_conn.execute(query).fetchdf()
+                    df = (
+                        pd.DataFrame(result).convert_dtypes(dtype_backend="pyarrow")
+                        if use_pyarrow
+                        else result
+                    )
 
             logger.info(
                 "Query completed",
@@ -132,25 +150,24 @@ class DatabaseIO:
             return df
 
         except Exception as e:
-            logger.exception(
+            logger.error(
                 "Query execution failed",
                 extra={
-                    "status": "error",
                     "error_type": type(e).__name__,
                 },
                 exc_info=True,
             )
             raise
 
-    # Execute Statements
     def execute(self, query: str, params: Optional[dict] = None) -> None:
         """
-        Execute SQL statements without returning results (DDL, DML)
+        Execute SQL statements without returning results (DDL, DML).
 
         :param query: SQL statement
         :type query: str
         :param params: Query parameters
         :type params: Optional[dict]
+        :raises ValueError: If DuckDB called with params
         """
         try:
             logger.info("Executing statement", extra={"db_type": self.db_type})
@@ -192,14 +209,16 @@ class DatabaseIO:
         """
         Write DataFrame to database table.
 
-        Supports:
-        - PostgreSQL via SQLAlchemy
-        - DuckDB via native connection
+        Automatically convert PyArrow dtypes to SQL-compatible types.
 
         :param df: DataFrame to persist
+        :type df: pd.DataFrame
         :param table_name: Target table name
-        :param if_exists: 'replace' | 'append' | 'fail'
-        :param index: Whether to write index
+        :type table_name: str
+        :param if_exists: Behavior if table exists
+        :type if_exists: Literal['replace' | 'append' | 'fail']
+        :param index: Whether to write DataFrame index
+        :type index: bool
         """
         try:
             logger.info(
@@ -211,6 +230,16 @@ class DatabaseIO:
                     "if_exists": if_exists,
                 },
             )
+
+            df_to_write = df.copy()
+            if hasattr(df_to_write, "convert_dtypes"):
+                if str(df_to_write.attrs.get("dtype_backend")) == "pyarrow" or any(
+                    "pyarrow" in str(dtype) for dtype in df_to_write.dtypes
+                ):
+                    logger.debug("Converting PyArrow dtypes for SQL compatibility")
+                    df_to_write = df_to_write.convert_dtypes(
+                        dtype_backend="numpy_nullable"
+                    )
 
             if self.db_type == "postgres":
                 with self.get_connection() as conn:
@@ -228,12 +257,25 @@ class DatabaseIO:
 
                     if if_exists == "replace":
                         duck_conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+                    elif if_exists == "fail":
+                        tables = duck_conn.execute(
+                            "SELECT table_name FROM information_schema.tables WHERE table_name = ?",
+                            [table_name],
+                        ).fetchall()
+                        if tables:
+                            raise ValueError(f"Table {table_name} already exists")
 
-                    duck_conn.register("tmp_df", df)
-                    duck_conn.execute(
-                        f"CREATE TABLE IF NOT EXISTS {table_name} AS SELECT * FROM tmp_df"
-                    )
-                    duck_conn.unregister("tmp_df")
+                    duck_conn.register("tmp_write_df", df_to_write)
+
+                    if if_exists == "append":
+                        duck_conn.execute(
+                            f"INSERT INTO {table_name} SELECT * FROM tmp_write_df"
+                        )
+                    else:
+                        duck_conn.execute(
+                            f"CREATE TABLE {table_name} AS SELECT * FROM tmp_write_df"
+                        )
+                        duck_conn.unregister("tmp_write_df")
 
             logger.info(
                 "Table write completed",
@@ -255,7 +297,11 @@ class DatabaseIO:
     # Utilities
     def table_exists(self, table_name: str) -> bool:
         """
-        Check whether a table exists.
+        Check whether a table exists in database.
+        :param table_name: Name of table to check
+        :type table_name: str
+        :return: True if table exists
+        :rtype: bool
         """
         try:
             if self.db_type == "postgres":
@@ -269,12 +315,17 @@ class DatabaseIO:
                     ).fetchone()
                     return bool(result and result[0] > 0)
 
-        except Exception:
-            logger.exception("Table existence check failed")
+        except Exception as e:
+            logger.error(
+                "Table existence check failed",
+                extra={"table": table_name, "error_type": type(e).__name__},
+                exc_info=True,
+            )
             return False
 
     # Cleanup
     def close(self):
+        """Dispose of database connection and cleanup resources."""
         if self._engine:
             self._engine.dispose()
             logger.info("PostgreSQL engine disposed")
